@@ -5,6 +5,8 @@ from urllib.parse import unquote
 
 import attr
 
+from server.naming import is_safe_resource_name
+
 # The CardDAV URL space.  These are absolute paths on the app's own origin, so they can be handed straight to a
 # client as hrefs.  ``/dav`` is the prefix declared in openhost.toml's public_paths.
 DAV_ROOT = "/dav"
@@ -16,7 +18,6 @@ ADDRESSBOOK_PATH = f"{HOME_PATH}default/"
 WELL_KNOWN_PATH = "/.well-known/carddav"
 
 VCARD_SUFFIX = ".vcf"
-_VALID_RESOURCE_NAME = re.compile(r"^[^\x00-\x1f/\\]{1,200}$")
 
 
 class ResourceKind(Enum):
@@ -82,7 +83,7 @@ def parse_resource_name(segment: str) -> str | None:
     if "/" in segment or not segment.endswith(VCARD_SUFFIX):
         return None
     resource_name = segment[: -len(VCARD_SUFFIX)]
-    if not _VALID_RESOURCE_NAME.match(resource_name):
+    if not is_safe_resource_name(resource_name):
         return None
     return resource_name
 

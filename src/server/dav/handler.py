@@ -33,6 +33,8 @@ from server.dav.xml import serialize
 from server.dav.xml import with_children
 from server.models import Contact
 from server.store import ContactStore
+from server.store import describe
+from server.vcard.summary import summarize
 
 DAV_COMPLIANCE = "1, 3, access-control, addressbook"
 AUTH_REALM = 'Basic realm="contacts", charset="UTF-8"'
@@ -124,7 +126,7 @@ class DavHandler:
         return _plain(405, f"{method} is not supported here", _allow_header(resource))
 
     def _context(self) -> PropertyContext:
-        return PropertyContext(change_seq=self._store.change_seq(), owner_username=self._owner_username)
+        return PropertyContext(token=self._store.token(), owner_username=self._owner_username)
 
     def _targets(self, resource: Resource, depth: str, contact: Contact | None = None) -> tuple[Target, ...]:
         targets = [Target(resource=resource, contact=contact)]
@@ -223,7 +225,9 @@ class DavHandler:
             if "*" not in candidates and existing.etag not in candidates:
                 return _plain(412, "the contact has changed since it was read")
 
-        result = self._store.put(resource.resource_name, text)
+        result = self._store.put(
+            resource.resource_name, text, describe("carddav put", _subject(text, resource.resource_name))
+        )
         return DavResponse(
             status=201 if result.was_created else 204,
             headers=(("ETag", result.contact.etag), ("Location", resource.path)),
@@ -237,5 +241,10 @@ class DavHandler:
             candidates = _etag_candidates(if_match)
             if "*" not in candidates and existing.etag not in candidates:
                 return _plain(412, "the contact has changed since it was read")
-        self._store.delete(resource.resource_name)
+        self._store.delete(resource.resource_name, describe("carddav delete", existing.display_name))
         return DavResponse(status=204)
+
+
+def _subject(vcard_text: str, resource_name: str) -> str:
+    """What to call this card in the commit log, before it has been stored."""
+    return summarize(vcard_text, fallback_uid=resource_name).display_name

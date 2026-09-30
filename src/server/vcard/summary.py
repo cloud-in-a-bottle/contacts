@@ -1,5 +1,3 @@
-import hashlib
-
 import attr
 
 from server.vcard.model import ContactFields
@@ -14,19 +12,15 @@ class VCardSummary:
     """Everything we derive from a vCard's text in order to index and list it.
 
     The text itself stays the source of truth: a card a CardDAV client wrote is stored byte-for-byte, so properties
-    this app knows nothing about survive a round trip.
+    this app knows nothing about survive a round trip.  The card's ETag is not here — that is the identity of its
+    bytes, which the repository defines; see :func:`server.store.content_etag`.
     """
 
     uid: str
-    etag: str
     display_name: str
     sort_key: str
     search_text: str
     fields: ContactFields
-
-
-def compute_etag(text: str) -> str:
-    return '"' + hashlib.sha256(text.encode("utf-8")).hexdigest()[:32] + '"'
 
 
 def summarize(text: str, fallback_uid: str) -> VCardSummary:
@@ -35,7 +29,6 @@ def summarize(text: str, fallback_uid: str) -> VCardSummary:
     display_name = fields.best_display_name or fallback_uid
     return VCardSummary(
         uid=extract_uid(card) or fallback_uid,
-        etag=compute_etag(text),
         display_name=display_name,
         sort_key=_sort_key(fields, display_name),
         search_text=build_search_text(card, fields),

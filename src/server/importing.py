@@ -1,6 +1,7 @@
 import attr
 
 from server.store import ContactStore
+from server.store import content_etag
 from server.vcard.build import new_uid
 from server.vcard.split import UTF8_BOM
 from server.vcard.split import split_cards
@@ -82,8 +83,9 @@ def import_vcf(store: ContactStore, raw: bytes) -> ImportReport:
         resource_name = new_uid()
         summary = summarize(card, fallback_uid=resource_name)
         display_name = summary.display_name if summary.display_name != resource_name else "(unnamed)"
+        etag = content_etag(card)
 
-        if summary.etag in seen_etags:
+        if etag in seen_etags:
             skipped.append(SkippedCard(display_name=display_name, reason="an identical card is already stored"))
             continue
         # summarize() falls back to the resource name when the card has no UID, and that fresh uuid can never
@@ -93,9 +95,9 @@ def import_vcf(store: ContactStore, raw: bytes) -> ImportReport:
             continue
 
         seen_uids.add(summary.uid)
-        seen_etags.add(summary.etag)
+        seen_etags.add(etag)
         to_write.append((resource_name, card))
         imported.append(ImportedCard(resource_name=resource_name, display_name=display_name))
 
-    store.put_many(to_write)
+    store.put_many(to_write, f"import: {len(to_write)} contacts from a vcf file")
     return ImportReport(imported=tuple(imported), skipped=tuple(skipped))

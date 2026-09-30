@@ -8,7 +8,8 @@ setup:
 
 # Run the app locally on http://localhost:8080 against a scratch database, with the owner check disabled.
 run:
-    CONTACTS_DB_PATH=.local/contacts.db CONTACTS_DEV_UNSAFE_NO_OWNER_AUTH=1 \
+    CONTACTS_DB_PATH=.local/contacts.db CONTACTS_REPO_PATH=.local/addressbook \
+        CONTACTS_DEV_UNSAFE_NO_OWNER_AUTH=1 \
         uv run hypercorn server.asgi:app --bind 0.0.0.0:8080 --reload
 
 # Run the tests that do not need podman.

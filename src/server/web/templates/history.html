@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}History of {{ contact.display_name }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <h1>History of {{ contact.display_name }}</h1>
+  <p class="muted" style="margin: 0;">
+    Every change to this contact, newest first — from the web UI, from a CardDAV client, or from an import.
+    Restoring writes a new version rather than rewinding, so you can always come back.
+  </p>
+
+  <section class="card">
+    <dl class="fields">
+      {% for revision in revisions %}
+      <dt>
+        {{ revision.when }}
+        {% if revision.is_current %}<span class="tag">current</span>{% endif %}
+      </dt>
+      <dd>
+        <div>{{ revision.summary }}</div>
+        <div class="actions" style="margin-top: 6px;">
+          <a class="button" href="/contacts/{{ contact.resource_name|urlencode }}/history/{{ revision.commit }}">View</a>
+          {% if not revision.is_current %}
+          <form method="post" action="/contacts/{{ contact.resource_name|urlencode }}/restore"
+                onsubmit="return confirm('Restore this version? The current one stays in the history.');">
+            <input type="hidden" name="commit" value="{{ revision.commit }}">
+            <button type="submit">Restore</button>
+          </form>
+          {% endif %}
+          <span class="muted mono" style="font-size: 12px;">{{ revision.short }}</span>
+        </div>
+      </dd>
+      {% else %}
+      <dt>—</dt><dd class="muted">No history recorded yet.</dd>
+      {% endfor %}
+    </dl>
+  </section>
+
+  <div class="actions">
+    <a class="button primary" href="/contacts/{{ contact.resource_name|urlencode }}">Back to contact</a>
+  </div>
+</div>
+{% endblock %}

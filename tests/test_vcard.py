@@ -157,10 +157,3 @@ def test_summarize_falls_back_to_the_resource_name_without_a_uid() -> None:
     summary = summarize("BEGIN:VCARD\r\nFN:No Uid\r\nEND:VCARD\r\n", fallback_uid="res-1")
     assert summary.uid == "res-1"
     assert summary.display_name == "No Uid"
-
-
-def test_etag_changes_with_content() -> None:
-    first = summarize(APPLE_CARD, fallback_uid="x").etag
-    second = summarize(APPLE_CARD.replace("Amara", "Amaka"), fallback_uid="x").etag
-    assert first != second
-    assert first.startswith('"') and first.endswith('"')

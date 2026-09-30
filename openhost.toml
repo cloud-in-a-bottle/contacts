@@ -21,7 +21,11 @@ path = "/settings"
 
 [resources]
 memory_mb = 256
+# apt, a CPython download and `uv sync` all happen in the build, which needs more headroom than the app does.
+build_memory_mb = 2048
 cpu_cores = 0.25
 
 [data]
+# The address book is a git repository under app_data; sqlite holds only the CardDAV password.
+app_data = true
 sqlite = ["main"]

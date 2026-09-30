@@ -5,39 +5,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS contact (
-    resource_name TEXT PRIMARY KEY,
-    uid           TEXT NOT NULL,
-    vcard         TEXT NOT NULL,
-    etag          TEXT NOT NULL,
-    display_name  TEXT NOT NULL,
-    sort_key      TEXT NOT NULL,
-    search_text   TEXT NOT NULL,
-    created_at    TEXT NOT NULL,
-    updated_at    TEXT NOT NULL,
-    change_seq    INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS contact_sort_key ON contact (sort_key);
-CREATE INDEX IF NOT EXISTS contact_change_seq ON contact (change_seq);
-CREATE INDEX IF NOT EXISTS contact_uid ON contact (uid);
-
--- Deletions are remembered forever so that a CardDAV sync-token of any age can still be answered exactly.  A
--- single-owner address book produces few enough of these that pruning would cost more correctness than space.
-CREATE TABLE IF NOT EXISTS tombstone (
-    resource_name TEXT PRIMARY KEY,
-    change_seq    INTEGER NOT NULL,
-    deleted_at    TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS tombstone_change_seq ON tombstone (change_seq);
-
--- One row.  change_seq is bumped on every write and backs both the CardDAV sync-token and the CalendarServer ctag.
-CREATE TABLE IF NOT EXISTS collection_state (
-    id         INTEGER PRIMARY KEY CHECK (id = 1),
-    change_seq INTEGER NOT NULL
-);
-
+-- The address book itself lives in a git repository, not here.  All that is left for sqlite is the small
+-- amount of app state that is not contact data and has no business being in version control.
 CREATE TABLE IF NOT EXISTS app_secret (
     name       TEXT PRIMARY KEY,
     value      TEXT NOT NULL,
@@ -60,7 +29,6 @@ class Database:
         # executescript() commits any open transaction before it runs, so schema setup cannot sit inside one.
         connection = self._connection()
         connection.executescript(SCHEMA)
-        connection.execute("INSERT OR IGNORE INTO collection_state (id, change_seq) VALUES (1, 0)")
 
     @property
     def path(self) -> Path:

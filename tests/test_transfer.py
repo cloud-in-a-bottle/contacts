@@ -1,3 +1,6 @@
+import subprocess
+from pathlib import Path
+
 import pytest
 from dav_helpers import vcard
 from litestar import Litestar
@@ -7,6 +10,7 @@ from server.exporting import build_export
 from server.exporting import export_filename
 from server.importing import VcfImportError
 from server.importing import import_vcf
+from server.repo import Repository
 from server.store import ContactStore
 from server.vcard.split import split_cards
 
@@ -64,17 +68,17 @@ def test_importing_a_google_export(store: ContactStore) -> None:
 
 def test_reimporting_the_same_file_changes_nothing(store: ContactStore) -> None:
     import_vcf(store, GOOGLE_EXPORT.encode("utf-8"))
-    change_seq = store.change_seq()
+    token = store.token()
 
     second = import_vcf(store, GOOGLE_EXPORT.encode("utf-8"))
     assert second.imported == ()
     assert [entry.reason for entry in second.skipped] == ["an identical card is already stored"] * 2
     assert store.count() == 2
-    assert store.change_seq() == change_seq, "a no-op import should not look like a change to syncing clients"
+    assert store.token() == token, "a no-op import should not look like a change to syncing clients"
 
 
 def test_a_card_already_stored_under_the_same_uid_is_skipped(store: ContactStore) -> None:
-    store.put("existing", vcard("shared-uid", "Mira Vance"))
+    store.put("existing", vcard("shared-uid", "Mira Vance"), "test")
     # Same UID, different bytes — the contact was edited since it was exported.
     incoming = vcard("shared-uid", "Mira Vance-Okafor")
 
@@ -97,13 +101,22 @@ def test_two_different_contacts_without_uids_both_import(store: ContactStore) ->
     assert len({contact.uid for contact in store.list_contacts()}) == 2
 
 
-def test_an_import_is_one_change_for_syncing_clients(store: ContactStore) -> None:
-    baseline = store.change_seq()
+def test_an_import_is_one_commit_for_syncing_clients(store: ContactStore, repository: Repository) -> None:
+    baseline = store.token()
     import_vcf(store, GOOGLE_EXPORT.encode("utf-8"))
 
     delta = store.changes_since(baseline)
+    assert delta is not None
     assert len(delta.changed) == 2
-    assert len({contact.change_seq for contact in delta.changed}) == 1
+    commits = subprocess.run(
+        ["git", "rev-list", "--count", f"{baseline}..HEAD"],
+        cwd=repository.path,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    ).stdout.strip()
+    assert commits == "1", "a whole file should import as one commit, not one per card"
 
 
 def test_unreadable_uploads_are_explained(store: ContactStore) -> None:
@@ -130,13 +143,11 @@ def test_export_concatenates_the_stored_cards_verbatim(store: ContactStore) -> N
         assert card in exported
 
 
-def test_export_round_trips_back_into_an_empty_store(store: ContactStore, database_path: object) -> None:
+def test_export_round_trips_back_into_an_empty_store(store: ContactStore, tmp_path: Path) -> None:
     import_vcf(store, GOOGLE_EXPORT.encode("utf-8"))
     exported = build_export(store.list_contacts())
 
-    from server.db import Database  # noqa: PLC0415 -- a second store, to import into somewhere empty
-
-    other = ContactStore(Database(database_path.parent / "other.db"))  # type: ignore[attr-defined]
+    other = ContactStore(Repository(tmp_path / "elsewhere"))
     report = import_vcf(other, exported)
 
     assert len(report.imported) == 2
@@ -144,8 +155,8 @@ def test_export_round_trips_back_into_an_empty_store(store: ContactStore, databa
 
 
 def test_export_separates_cards_that_lack_a_trailing_newline(store: ContactStore) -> None:
-    store.put("a", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:A One\r\nEND:VCARD")
-    store.put("b", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:B Two\r\nEND:VCARD")
+    store.put("a", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:A One\r\nEND:VCARD", "test")
+    store.put("b", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:B Two\r\nEND:VCARD", "test")
     assert len(split_cards(build_export(store.list_contacts()).decode("utf-8"))) == 2
 
 

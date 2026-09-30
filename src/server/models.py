@@ -1,33 +1,20 @@
-import sqlite3
-
 import attr
 
 
 @attr.s(auto_attribs=True, frozen=True)
 class Contact:
-    """A stored address book entry.  ``vcard`` is authoritative; every other column is derived from it."""
+    """A stored address book entry.
+
+    ``vcard`` is the file's contents, byte for byte; everything else is derived from it or from the repository.
+    ``etag`` is the git blob name of those bytes, so it is the same identifier git itself uses for them.
+    """
 
     resource_name: str
     uid: str
     vcard: str
     etag: str
     display_name: str
-    created_at: str
     updated_at: str
-    change_seq: int
-
-    @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "Contact":
-        return cls(
-            resource_name=row["resource_name"],
-            uid=row["uid"],
-            vcard=row["vcard"],
-            etag=row["etag"],
-            display_name=row["display_name"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-            change_seq=row["change_seq"],
-        )
 
     @property
     def href_name(self) -> str:
@@ -44,7 +31,7 @@ class WriteResult:
 class SyncDelta:
     changed: tuple[Contact, ...]
     deleted: tuple[str, ...]
-    change_seq: int
+    token: str
 
 
 @attr.s(auto_attribs=True, frozen=True)

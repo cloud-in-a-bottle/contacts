@@ -1,8 +1,8 @@
 # contacts
 
-A contacts app for [Cloud in a Bottle](https://github.com/cloud-in-a-bottle). It stores your address book in
-SQLite, gives you a web UI to read and edit it, and serves the same data over **CardDAV** so your phone and
-laptop can sync against it.
+A contacts app for [Cloud in a Bottle](https://github.com/cloud-in-a-bottle). Your address book is **a git
+repository of `.vcf` files**; there is a web UI to read and edit it, and a **CardDAV** endpoint so your phone
+and laptop can sync against it.
 
 It serves exactly one person — the owner of the compute space. There are no user accounts.
 
@@ -75,11 +75,63 @@ bare parameters, so cards exported from older address books import cleanly.
 
 ## Storage
 
-One SQLite database, provisioned by Cloud in a Bottle via `sqlite = ["main"]` in the manifest, so it lives in
-the app's backed-up data directory. The vCard text is the source of truth; every other column is derived from
-it and can be rebuilt by rewriting the rows.
+The address book is a git repository under the app's data directory — one `.vcf` file per contact, one commit
+per change:
 
-The CardDAV password is stored in the clear, because the settings page has to be able to show it to you again.
+```
+/data/app_data/contacts/addressbook/
+├── .git/
+├── 3f9c1e08-....vcf
+└── ines-bergstrom.vcf
+```
+
+```
+$ git log --format='%h %s'
+847889f restore: Ines Bergström to f3810f6b
+935e31c edit: Ines Bergström-Ek
+f3810f6 carddav put: Ines Bergström
+```
+
+You can clone it, grep it, `git log` it, and restore any past version — **History** on a contact does that from
+the UI. Restoring writes a new commit rather than rewinding, so an undo is itself undoable, and a deleted
+contact stays in the history even though its file is gone.
+
+### Why git suits CardDAV
+
+The protocol's primitives turn out to already be git's, which is most of the reason this works:
+
+| CardDAV needs | is |
+|---|---|
+| `sync-token` | the commit SHA |
+| the delta since a token | `git diff --name-status <sha> HEAD` |
+| deletions since a token | the `D` lines of that diff — no tombstone bookkeeping |
+| `getetag` | the blob SHA, which is *already* the name of those bytes |
+| `getctag` | the HEAD SHA |
+
+An ETag is therefore not something this app computes and hopes stays in step with storage; it is the identifier
+git itself uses. A sync token names a real snapshot, and one that git no longer has is answered honestly with
+`409 valid-sync-token`.
+
+Two consequences worth knowing. Writing a card that is byte-for-byte what is already stored does **not** create
+a commit, because HEAD is the sync token and an empty commit would tell every client to resynchronise over
+nothing. And every write takes an exclusive `flock` on the repository, so concurrent CardDAV and web writes
+serialise instead of racing on git's index.
+
+### What git cannot do
+
+Sort and search. Those need every card parsed, so the derived fields — display name, sort key, search text —
+are cached in memory against the current commit and rebuilt whenever HEAD moves. The cache cannot go stale,
+because its key *is* the version of the data. The full vCard text is not cached: `list_contacts()` reads the
+files, which the page cache makes cheap.
+
+This is fine for a personal address book and would not be for a hundred thousand contacts; the ceiling is the
+cost of parsing every card whenever HEAD moves.
+
+### SQLite
+
+Still present, holding exactly one thing: the CardDAV password. It is stored in the clear because the settings
+page has to show it to you again, which is also why it stays out of the repository — a secret committed to git
+is a secret in the log forever.
 
 ## Development
 
@@ -104,8 +156,10 @@ put the real router in front — and they skip when podman is absent.
 src/server/
 ├── app.py          # Litestar app assembly; asgi.py is the entry point hypercorn runs
 ├── config.py       # environment -> Config, failing loudly if the database is missing
-├── db.py           # sqlite schema and per-thread connections
-├── store.py        # contact CRUD and the change sequence that backs sync
+├── repo.py         # the git working tree: commits, diffs, history, the write lock
+├── store.py        # contacts on top of the repository, with a commit-keyed index
+├── naming.py       # which resource names are safe to use as filenames
+├── db.py           # sqlite, for the CardDAV password and nothing else
 ├── credentials.py  # the CardDAV password
 ├── importing.py    # read an uploaded .vcf, skipping what is already stored
 ├── exporting.py    # hand the whole address book back as one .vcf

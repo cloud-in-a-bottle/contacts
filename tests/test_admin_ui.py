@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 from dav_helpers import vcard
 from litestar import Litestar
@@ -61,10 +62,11 @@ def test_health_needs_no_authentication(anonymous_client: TestClient[Litestar]) 
     assert response.json() == {"status": "ok"}
 
 
-def test_the_dev_override_opens_the_ui_without_the_router(database_path: object) -> None:
+def test_the_dev_override_opens_the_ui_without_the_router(database_path: Path, repository_path: Path) -> None:
     app = create_app(
         Config(
-            database_path=database_path,  # type: ignore[arg-type]
+            database_path=database_path,
+            repository_path=repository_path,
             owner_username="alice",
             allow_unauthenticated_admin=True,
         )
@@ -81,7 +83,7 @@ def test_the_list_page_is_empty_to_begin_with(owner_client: TestClient[Litestar]
 def test_the_new_and_edit_forms_render(owner_client: TestClient[Litestar], store: ContactStore) -> None:
     assert 'name="formatted_name"' in owner_client.get("/contacts/new").text
 
-    store.put("mira", vcard("uid-1", "Mira Vance"))
+    store.put("mira", vcard("uid-1", "Mira Vance"), "test")
     edit = owner_client.get("/contacts/mira/edit")
     assert edit.status_code == 200
     assert 'value="Mira Vance"' in edit.text
@@ -143,8 +145,8 @@ def test_deleting_from_the_ui_removes_it_from_carddav_too(
 
 
 def test_search_narrows_the_list(owner_client: TestClient[Litestar], store: ContactStore) -> None:
-    store.put("one", vcard("uid-1", "Ana Zielinski", "ana@riverbank.test"))
-    store.put("two", vcard("uid-2", "Bo Nilsen", "bo@other.test"))
+    store.put("one", vcard("uid-1", "Ana Zielinski", "ana@riverbank.test"), "test")
+    store.put("two", vcard("uid-2", "Bo Nilsen", "bo@other.test"), "test")
 
     body = owner_client.get("/", params={"q": "riverbank"}).text
     assert "Ana Zielinski" in body
@@ -152,14 +154,14 @@ def test_search_narrows_the_list(owner_client: TestClient[Litestar], store: Cont
 
 
 def test_contact_names_are_escaped_in_html(owner_client: TestClient[Litestar], store: ContactStore) -> None:
-    store.put("x", vcard("uid-1", "<script>alert(1)</script>"))
+    store.put("x", vcard("uid-1", "<script>alert(1)</script>"), "test")
     body = owner_client.get("/").text
     assert "<script>alert(1)</script>" not in body
     assert "&lt;script&gt;" in body
 
 
 def test_the_vcard_can_be_downloaded(owner_client: TestClient[Litestar], store: ContactStore) -> None:
-    store.put("mira", vcard("uid-1", "Mira Vance"))
+    store.put("mira", vcard("uid-1", "Mira Vance"), "test")
     response = owner_client.get("/contacts/mira/vcard")
     assert response.status_code == 200
     assert response.headers["Content-Type"].startswith("text/vcard")
@@ -171,6 +173,7 @@ def test_an_embedded_photo_is_served(owner_client: TestClient[Litestar], store: 
     store.put(
         "mira",
         f"BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Mira Vance\r\nPHOTO;ENCODING=b;TYPE=PNG:{pixel}\r\nEND:VCARD\r\n",
+        "test",
     )
     response = owner_client.get("/contacts/mira/photo")
     assert response.status_code == 200
@@ -180,7 +183,7 @@ def test_an_embedded_photo_is_served(owner_client: TestClient[Litestar], store: 
 
 
 def test_a_contact_without_a_photo_has_no_photo_route(owner_client: TestClient[Litestar], store: ContactStore) -> None:
-    store.put("mira", vcard("uid-1", "Mira Vance"))
+    store.put("mira", vcard("uid-1", "Mira Vance"), "test")
     assert owner_client.get("/contacts/mira/photo").status_code == 404
 
 

@@ -40,7 +40,7 @@ _PRIVILEGES = (
 
 @attr.s(auto_attribs=True, frozen=True)
 class PropertyContext:
-    change_seq: int
+    token: str
     owner_username: str
 
 
@@ -163,8 +163,8 @@ def property_table(resource: Resource, contact: Contact | None, context: Propert
                 ),
                 _name(CARDDAV_NS, "supported-address-data"): _supported_address_data,
                 _name(CARDDAV_NS, "max-resource-size"): lambda: carddav("max-resource-size", str(MAX_RESOURCE_SIZE)),
-                _name(CALSERVER_NS, "getctag"): lambda: element(CALSERVER_NS, "getctag", str(context.change_seq)),
-                _name(DAV_NS, "sync-token"): lambda: dav("sync-token", sync_token(context.change_seq)),
+                _name(CALSERVER_NS, "getctag"): lambda: element(CALSERVER_NS, "getctag", context.token),
+                _name(DAV_NS, "sync-token"): lambda: dav("sync-token", sync_token(context.token)),
                 _name(DAV_NS, "supported-report-set"): lambda: _supported_report_set(
                     (CARDDAV_NS, "addressbook-multiget"),
                     (CARDDAV_NS, "addressbook-query"),
@@ -184,7 +184,6 @@ def property_table(resource: Resource, contact: Contact | None, context: Propert
                 "getcontentlength", str(len(contact.vcard.encode("utf-8")))
             ),
             _name(DAV_NS, "getlastmodified"): lambda: dav("getlastmodified", _http_date(contact.updated_at)),
-            _name(DAV_NS, "creationdate"): lambda: dav("creationdate", contact.created_at),
             _name(CARDDAV_NS, "address-data"): lambda: carddav("address-data", contact.vcard),
         }
     )

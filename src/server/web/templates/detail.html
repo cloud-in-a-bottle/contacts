@@ -46,6 +46,7 @@
 
   <div class="actions">
     <a class="button primary" href="/contacts/{{ contact.resource_name|urlencode }}/edit">Edit</a>
+    <a class="button" href="/contacts/{{ contact.resource_name|urlencode }}/history">History</a>
     <a class="button" href="/contacts/{{ contact.resource_name|urlencode }}/vcard">Download .vcf</a>
     <form method="post" action="/contacts/{{ contact.resource_name|urlencode }}/delete"
           onsubmit="return confirm('Delete {{ contact.display_name }}? This also removes it from synced clients.');">

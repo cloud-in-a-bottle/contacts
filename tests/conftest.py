@@ -10,6 +10,7 @@ from server.app import create_app
 from server.config import Config
 from server.credentials import CredentialStore
 from server.db import Database
+from server.repo import Repository
 from server.store import ContactStore
 
 OWNER_USERNAME = "alice"
@@ -21,8 +22,18 @@ def database_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def config(database_path: Path) -> Config:
-    return Config(database_path=database_path, owner_username=OWNER_USERNAME, allow_unauthenticated_admin=False)
+def repository_path(tmp_path: Path) -> Path:
+    return tmp_path / "addressbook"
+
+
+@pytest.fixture
+def config(database_path: Path, repository_path: Path) -> Config:
+    return Config(
+        database_path=database_path,
+        repository_path=repository_path,
+        owner_username=OWNER_USERNAME,
+        allow_unauthenticated_admin=False,
+    )
 
 
 @pytest.fixture
@@ -36,8 +47,13 @@ def database(database_path: Path) -> Database:
 
 
 @pytest.fixture
-def store(database: Database) -> ContactStore:
-    return ContactStore(database)
+def repository(repository_path: Path) -> Repository:
+    return Repository(repository_path)
+
+
+@pytest.fixture
+def store(repository: Repository) -> ContactStore:
+    return ContactStore(repository)
 
 
 @pytest.fixture

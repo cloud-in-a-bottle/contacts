@@ -24,6 +24,7 @@ from server.dav.xml import parse_request_body
 from server.dav.xml import serialize
 from server.dav.xml import with_children
 from server.models import Contact
+from server.models import SyncDelta
 from server.store import ContactStore
 
 MULTISTATUS_CONTENT_TYPE = "application/xml; charset=utf-8"
@@ -74,6 +75,11 @@ def handle_report(body: bytes, resource: Resource, store: ContactStore, context:
     )
 
 
+def _everything(store: ContactStore) -> SyncDelta:
+    """An empty sync-token means the client has nothing yet, so every contact is a change."""
+    return SyncDelta(changed=store.list_contacts(), deleted=(), token=store.token())
+
+
 def _contact_entry(contact: Contact, query: PropfindQuery, context: PropertyContext) -> ResponseEntry:
     resource = Resource(
         kind=ResourceKind.CONTACT, path=contact_path(contact.resource_name), resource_name=contact.resource_name
@@ -117,8 +123,10 @@ def _sync_collection(
         return DavResponse(status=403, body=b"sync-collection only applies to the address book")
 
     token_node = root.find(f"{{{DAV_NS}}}sync-token")
-    since_seq = parse_sync_token(token_node.text or "" if token_node is not None else "")
-    if since_seq is None:
+    since = parse_sync_token(token_node.text or "" if token_node is not None else "")
+    delta = None if since is None else store.changes_since(since) if since else _everything(store)
+    if delta is None:
+        # Either not a token we issued, or one naming a commit this repository no longer has.
         return DavResponse(
             status=409,
             body=serialize(with_children(dav("error"), (dav("valid-sync-token"),))),
@@ -126,9 +134,8 @@ def _sync_collection(
         )
 
     query = _query_from(root.find(f"{{{DAV_NS}}}prop"))
-    delta = store.changes_since(since_seq)
     entries: list[ResponseEntry] = [_contact_entry(contact, query, context) for contact in delta.changed]
     entries.extend(
         ResponseEntry(href=contact_path(resource_name), status=STATUS_NOT_FOUND) for resource_name in delta.deleted
     )
-    return _multistatus(tuple(entries), token=sync_token(delta.change_seq))
+    return _multistatus(tuple(entries), token=sync_token(delta.token))

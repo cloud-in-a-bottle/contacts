@@ -17,6 +17,7 @@ from server.dav.handler import DavHandler
 from server.dav.paths import DAV_ROOT
 from server.dav.paths import WELL_KNOWN_PATH
 from server.db import Database
+from server.repo import Repository
 from server.store import ContactStore
 from server.web.admin import admin_router
 from server.web.auth import owner_guard
@@ -37,7 +38,8 @@ def health() -> HealthStatus:
 def create_app(config: Config | None = None) -> Litestar:
     resolved = config if config is not None else load_config()
     database = Database(resolved.database_path)
-    store = ContactStore(database)
+    repository = Repository(resolved.repository_path)
+    store = ContactStore(repository)
     credentials = CredentialStore(database)
     # Materialise the CardDAV password now so that it exists from the app's first boot rather than from the first
     # time someone opens the settings page.
@@ -59,7 +61,7 @@ def create_app(config: Config | None = None) -> Litestar:
             "{} is set: the admin UI is being served without checking for the compute space owner",
             "CONTACTS_DEV_UNSAFE_NO_OWNER_AUTH",
         )
-    logger.info("contacts starting with database at {}", database.path)
+    logger.info("contacts starting: address book at {}, app state at {}", repository.path, database.path)
 
     return Litestar(
         route_handlers=[
