@@ -34,6 +34,23 @@ Open **Settings** in the app. It shows the server URL, the username, and the pas
 
 Any username is accepted; only the password is checked. There is a single address book, called *Contacts*.
 
+## Import and export
+
+**Import / export** in the nav takes a `.vcf` file — a Google Contacts, iCloud or Thunderbird export — and adds
+every card in it, and hands the whole address book back as a single `.vcf`.
+
+Import only ever adds; it never overwrites. A card is skipped when it is already stored, judged two ways: by UID
+where the exporter wrote one, and otherwise by the card's exact bytes, which is what makes re-importing the same
+file from Google Contacts (whose vCard export carries no UID at all) a no-op rather than a way to double your
+address book. The same check runs within the file, so a file listing someone twice imports them once. The whole
+import lands under one change sequence, so a syncing client sees a single delta rather than one change per card.
+
+Export concatenates the stored cards untouched, which means an export is a faithful copy of what your clients
+wrote rather than a re-rendering of it — it round-trips back into an empty address book byte-for-byte.
+
+This reads vCards only. Google's "Google CSV" and "Outlook CSV" export options will not work; pick
+*vCard (for iOS Contacts)*.
+
 ## What's supported
 
 `PROPFIND`, `REPORT` (`addressbook-multiget`, `addressbook-query`, `sync-collection`), `GET`, `PUT`, `DELETE`,
@@ -90,7 +107,9 @@ src/server/
 ├── db.py           # sqlite schema and per-thread connections
 ├── store.py        # contact CRUD and the change sequence that backs sync
 ├── credentials.py  # the CardDAV password
-├── vcard/          # parse, build and summarise vCard text
+├── importing.py    # read an uploaded .vcf, skipping what is already stored
+├── exporting.py    # hand the whole address book back as one .vcf
+├── vcard/          # parse, build, split and summarise vCard text
 ├── dav/            # the CardDAV endpoint: paths, properties, PROPFIND, REPORT, method dispatch
 └── web/            # the owner-facing UI: routes, forms, templates
 ```

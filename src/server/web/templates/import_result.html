@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Import finished{% endblock %}
+{% block content %}
+<div class="stack">
+  <h1>Imported {{ report.imported|length }} of {{ report.total }}</h1>
+
+  {% if report.skipped %}
+  <p class="notice">{{ report.skipped|length }} card{{ '' if report.skipped|length == 1 else 's' }} already stored, so nothing was changed for {{ 'it' if report.skipped|length == 1 else 'them' }}.</p>
+  {% endif %}
+
+  {% if report.imported %}
+  <section class="card">
+    <ul class="contact-list">
+      {% for entry in report.imported %}
+      <li><a href="/contacts/{{ entry.resource_name|urlencode }}">
+        <span class="avatar" aria-hidden="true">{{ entry.display_name[:2]|upper }}</span>
+        <span class="who"><span class="name">{{ entry.display_name }}</span></span>
+      </a></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if report.skipped %}
+  <section class="card">
+    <div class="field-group"><h2>Skipped</h2></div>
+    <dl class="fields">
+      {% for entry in report.skipped %}
+      <dt>{{ entry.display_name }}</dt><dd class="muted">{{ entry.reason }}</dd>
+      {% endfor %}
+    </dl>
+  </section>
+  {% endif %}
+
+  <div class="actions">
+    <a class="button primary" href="/">Back to contacts</a>
+    <a class="button" href="/import">Import another file</a>
+  </div>
+</div>
+{% endblock %}

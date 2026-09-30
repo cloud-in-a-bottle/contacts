@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Import and export{% endblock %}
+{% block content %}
+<div class="stack">
+  <h1>Import and export</h1>
+  {% if error %}<p class="notice">{{ error }}</p>{% endif %}
+
+  <form class="card" method="post" action="/import" enctype="multipart/form-data">
+    <div class="field-group">
+      <label>vCard file
+        <input type="file" name="upload" accept=".vcf,text/vcard,text/x-vcard,text/directory" required>
+      </label>
+      <p class="muted" style="margin: 0;">
+        Contacts are only ever added, never overwritten. A card already stored — matched on its UID, or on being
+        byte-for-byte identical — is skipped, so re-importing the same file twice is safe.
+      </p>
+      <div><button class="primary" type="submit">Import</button></div>
+    </div>
+  </form>
+
+  <section class="card">
+    <div class="field-group">
+      <h2>Export</h2>
+      <p class="muted" style="margin: 0;">
+        {% if contact_count %}
+          Download all {{ contact_count }} contact{{ '' if contact_count == 1 else 's' }} as a single .vcf file,
+          each card exactly as it is stored. Any CardDAV client, and Google Contacts, will read it back.
+        {% else %}
+          There is nothing to export yet.
+        {% endif %}
+      </p>
+      {% if contact_count %}<div><a class="button" href="/export">Download {{ contact_count }} contact{{ '' if contact_count == 1 else 's' }}</a></div>{% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="field-group">
+      <h2>Getting a file to import</h2>
+      <ul class="muted" style="margin: 0; padding-left: 20px; display: grid; gap: 6px;">
+        <li><strong>Google Contacts:</strong> contacts.google.com → Export → <em>vCard (for iOS Contacts)</em>. Do not pick either CSV format; this importer reads vCards only.</li>
+        <li><strong>iCloud:</strong> icloud.com/contacts → select all → the gear menu → Export vCard.</li>
+        <li><strong>Thunderbird:</strong> Address Book → Tools → Export, choosing vCard.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+{% endblock %}

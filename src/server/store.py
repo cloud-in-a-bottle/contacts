@@ -1,9 +1,11 @@
 import sqlite3
+from collections.abc import Sequence
 from datetime import UTC
 from datetime import datetime
 
 from server.db import Database
 from server.models import Contact
+from server.models import Fingerprints
 from server.models import SyncDelta
 from server.models import WriteResult
 from server.vcard.summary import summarize
@@ -98,6 +100,63 @@ class ContactStore:
                 f"SELECT {_COLUMNS} FROM contact WHERE resource_name = ?", (resource_name,)
             ).fetchone()
         return WriteResult(contact=Contact.from_row(row), was_created=existing is None)
+
+    def put_many(self, cards: Sequence[tuple[str, str]]) -> tuple[Contact, ...]:
+        """Write several contacts in one transaction, under a single change sequence.
+
+        Importing a file of a few thousand cards one transaction at a time would be slow and would flood a
+        syncing client with a distinct change per card; one bump means one delta covering the whole import.
+        """
+        if not cards:
+            return ()
+        timestamp = _now()
+        with self._database.writing() as connection:
+            change_seq = _bump_change_seq(connection)
+            for resource_name, vcard_text in cards:
+                summary = summarize(vcard_text, fallback_uid=resource_name)
+                existing = connection.execute(
+                    "SELECT created_at FROM contact WHERE resource_name = ?", (resource_name,)
+                ).fetchone()
+                connection.execute(
+                    """
+                    INSERT INTO contact (resource_name, uid, vcard, etag, display_name, sort_key, search_text,
+                                         created_at, updated_at, change_seq)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (resource_name) DO UPDATE SET
+                        uid = excluded.uid, vcard = excluded.vcard, etag = excluded.etag,
+                        display_name = excluded.display_name, sort_key = excluded.sort_key,
+                        search_text = excluded.search_text, updated_at = excluded.updated_at,
+                        change_seq = excluded.change_seq
+                    """,
+                    (
+                        resource_name,
+                        summary.uid,
+                        vcard_text,
+                        summary.etag,
+                        summary.display_name,
+                        summary.sort_key,
+                        summary.search_text,
+                        existing["created_at"] if existing is not None else timestamp,
+                        timestamp,
+                        change_seq,
+                    ),
+                )
+                connection.execute("DELETE FROM tombstone WHERE resource_name = ?", (resource_name,))
+            placeholders = ",".join("?" for _ in cards)
+            rows = connection.execute(
+                f"SELECT {_COLUMNS} FROM contact WHERE resource_name IN ({placeholders})",
+                tuple(resource_name for resource_name, _ in cards),
+            ).fetchall()
+        return tuple(Contact.from_row(row) for row in rows)
+
+    def fingerprints(self) -> Fingerprints:
+        """The UIDs and content hashes already stored, used to spot duplicates during an import."""
+        with self._database.reading() as connection:
+            rows = connection.execute("SELECT uid, etag FROM contact").fetchall()
+        return Fingerprints(
+            uids=frozenset(row["uid"] for row in rows if row["uid"]),
+            etags=frozenset(row["etag"] for row in rows),
+        )
 
     def delete(self, resource_name: str) -> bool:
         with self._database.writing() as connection:

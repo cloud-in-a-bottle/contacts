@@ -1,3 +1,4 @@
+from typing import Annotated
 from typing import Any
 
 from anyio.to_thread import run_sync
@@ -6,8 +7,11 @@ from litestar import Response
 from litestar import Router
 from litestar import get
 from litestar import post
+from litestar.datastructures import UploadFile
 from litestar.di import NamedDependency
+from litestar.enums import RequestEncodingType
 from litestar.exceptions import NotFoundException
+from litestar.params import Body
 from litestar.params import FromPath
 from litestar.params import FromQuery
 from litestar.response import Redirect
@@ -17,6 +21,12 @@ from litestar.types import Guard
 from server.credentials import CredentialStore
 from server.dav.paths import ADDRESSBOOK_PATH
 from server.dav.paths import DAV_ROOT
+from server.exporting import EXPORT_CONTENT_TYPE
+from server.exporting import build_export
+from server.exporting import export_filename
+from server.importing import MAX_IMPORT_BYTES
+from server.importing import VcfImportError
+from server.importing import import_vcf
 from server.models import Contact
 from server.store import ContactStore
 from server.vcard.build import new_uid
@@ -147,7 +157,7 @@ async def contact_vcard(store: NamedDependency[ContactStore], resource_name: Fro
     contact = await _require_contact(store, resource_name)
     return Response(
         content=contact.vcard.encode("utf-8"),
-        media_type="text/vcard; charset=utf-8",
+        media_type=EXPORT_CONTENT_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{resource_name}.vcf"'},
     )
 
@@ -162,6 +172,38 @@ async def contact_photo(store: NamedDependency[ContactStore], resource_name: Fro
         content=photo.data,
         media_type=photo.media_type,
         headers={"Cache-Control": "private, max-age=300", "ETag": contact.etag},
+    )
+
+
+@get("/import", name="contact_import_form")
+async def contact_import_form(store: NamedDependency[ContactStore]) -> Template:
+    return Template(template_name="import.html", context={"error": None, "contact_count": await run_sync(store.count)})
+
+
+@post("/import", name="contact_import", request_max_body_size=MAX_IMPORT_BYTES)
+async def contact_import(
+    store: NamedDependency[ContactStore],
+    data: Annotated[UploadFile, Body(media_type=RequestEncodingType.MULTI_PART)],
+) -> Template:
+    raw = await data.read()
+    try:
+        report = await run_sync(import_vcf, store, raw)
+    except VcfImportError as error:
+        return Template(
+            template_name="import.html",
+            status_code=422,
+            context={"error": str(error), "contact_count": await run_sync(store.count)},
+        )
+    return Template(template_name="import_result.html", context={"report": report})
+
+
+@get("/export", name="contact_export")
+async def contact_export(store: NamedDependency[ContactStore]) -> Response[bytes]:
+    contacts = await run_sync(store.list_contacts)
+    return Response(
+        content=build_export(contacts),
+        media_type=EXPORT_CONTENT_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{export_filename()}"'},
     )
 
 
@@ -202,6 +244,9 @@ def admin_router(owner_guard: Guard) -> Router:
         guards=[owner_guard],
         route_handlers=[
             contact_list,
+            contact_import_form,
+            contact_import,
+            contact_export,
             contact_new,
             contact_create,
             contact_detail,

@@ -51,3 +51,11 @@ class SyncDelta:
 class Secret:
     value: str
     created_at: str
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class Fingerprints:
+    """What is already stored, for deciding whether an incoming card is a duplicate."""
+
+    uids: frozenset[str]
+    etags: frozenset[str]
