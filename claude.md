@@ -17,6 +17,15 @@ a single-owner contacts app: sqlite storage, a server-rendered admin UI, and a C
 - **`change_seq` is the backbone of sync.** every write bumps it; it backs both the ctag and the RFC 6578 sync token. deletions leave permanent tombstones so an old sync token is still answerable. do not prune them without replacing the "token too old" path with a `valid-sync-token` rejection.
 - the protocol layer (`src/server/dav/`) is deliberately synchronous and pure: `DavRequest` in, `DavResponse` out. the ASGI adapter runs it on a worker thread. keep it that way — it is what makes the CardDAV tests readable.
 
+## running the harness in the claude-workbench container
+
+two environment traps, both found the hard way:
+
+- **podman is installed but cannot build.** the workbench runs as root inside rootless podman with `cap-drop=ALL`, so a nested `podman build` fails at `lchown /etc/gshadow: invalid argument` ("potentially insufficient UIDs or GIDs available in user namespace"). `just test-all` therefore cannot pass here; run it on a normal host. `just test` excludes those tests via the `containers` marker.
+- **the harness inherits `OPENHOST_ZONE_DOMAIN` from this container** (claude-workbench is itself an openhost app, so the router injects it). the router the harness spawns then scopes its `session_token` cookie to `host.zackpolizzi.com` while the harness talks to it at `harness.localhost`, the cookie is dropped, and setup fails with `setup did not set session_token cookie, got []`. clearing `OPENHOST_ZONE_DOMAIN` gets past it. this looks like a harness bug — it should override the openhost env vars for the router it spawns rather than inheriting them — so mention it rather than committing a workaround.
+
+playwright's chromium does not install here by default (`Playwright does not support chromium on ubuntu26.04-x64`); `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` downloads the 24.04 fallback build and it runs fine, which is enough to screenshot the admin UI against a locally-run `just run`.
+
 ## deploying & debugging on openhost
 
 - openhost is a cloud platform for self-hosting apps. there's context on openhost at `~/openhost`; read `docs/src/creating_an_app.md` there for how apps are built and run.

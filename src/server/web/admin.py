@@ -26,6 +26,7 @@ from server.vcard.model import PostalAddress
 from server.vcard.parse import extract_fields
 from server.vcard.parse import extract_photo
 from server.vcard.parse import parse_vcard
+from server.web.formatting import humanize_timestamp
 from server.web.forms import contact_fields_from_form
 from server.web.urls import external_origin
 from server.web.view_models import initials_for
@@ -93,12 +94,14 @@ async def contact_create(request: Request[Any, Any, Any], store: NamedDependency
 async def contact_detail(store: NamedDependency[ContactStore], resource_name: FromPath[str]) -> Template:
     contact = await _require_contact(store, resource_name)
     card = parse_vcard(contact.vcard)
+    fields = extract_fields(card)
     return Template(
         template_name="detail.html",
         context={
             "contact": contact,
-            "fields": extract_fields(card),
-            "initials": initials_for(contact.display_name),
+            "fields": fields,
+            "updated_at": humanize_timestamp(contact.updated_at),
+            "initials": initials_for(contact.display_name, fields.name),
             "has_photo": extract_photo(card) is not None,
         },
     )
@@ -180,7 +183,7 @@ async def settings(
             "host": origin.split("://", 1)[-1],
             "owner_username": owner_username,
             "password": secret.value,
-            "password_created_at": secret.created_at,
+            "password_created_at": humanize_timestamp(secret.created_at),
             "contact_count": await run_sync(store.count),
             "regenerated": regenerated,
         },

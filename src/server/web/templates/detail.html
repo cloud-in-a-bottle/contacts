@@ -40,7 +40,7 @@
       {% if fields.birthday %}<dt>Birthday</dt><dd>{{ fields.birthday }}</dd>{% endif %}
       {% if fields.categories %}<dt>Tags</dt><dd>{{ fields.categories|join(', ') }}</dd>{% endif %}
       {% if fields.note %}<dt>Note</dt><dd style="white-space: pre-wrap;">{{ fields.note }}</dd>{% endif %}
-      <dt>Updated</dt><dd class="muted">{{ contact.updated_at }}</dd>
+      <dt>Updated</dt><dd class="muted">{{ updated_at }}</dd>
     </dl>
   </div>
 
