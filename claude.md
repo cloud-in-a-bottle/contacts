@@ -1,0 +1,29 @@
+- read README.md and style_guide.md at the beginning of every session.
+- on first init, run `just setup` — this installs dependencies, the pre-commit hooks, and the playwright chromium browser. pre-commit runs ruff and mypy on commit.
+- use uv for all python work (`uv run ...`, `uv add ...`, `uv sync`).
+- this is an OpenHost app. `openhost.toml` is the app manifest.
+- the app is a litestar/hypercorn backend that serves on port 8080 and exposes a `/health` endpoint. see "deploying & debugging on openhost" below.
+- `just test` runs the in-process suite (no podman needed). `just test-all` adds `tests/test_harness.py`, which uses the OpenHost test harness (the `openhost[test-harness]` package, imported as `openhost_test_harness`): it builds the Dockerfile, runs the app under podman per `openhost.toml`, and fronts it with the real OpenHost router. those tests skip when podman is absent. `stack.url` goes through the router and requires owner auth (use `stack.owner_session` for requests, or `stack.playwright_login(page)` for browser tests); `stack.app_url` hits the container directly.
+
+## what this app is
+
+a single-owner contacts app: sqlite storage, a server-rendered admin UI, and a CardDAV endpoint for external clients. no user accounts.
+
+## things to be careful about
+
+- **two different auth models, deliberately.** the admin UI is gated by the OpenHost router (the app only trusts the `X-OpenHost-Is-Owner` header, which the router strips from inbound requests so it cannot be forged). the CardDAV paths are in `public_paths` and are gated by the app's own HTTP Basic check. do not add anything to `public_paths` without thinking hard: those paths are reachable from the public internet with nothing but the generated password in front of them.
+- **stored vCards are byte-for-byte what the client sent.** that is the whole round-tripping story — properties the app does not model survive because they are never rewritten. if you find yourself normalising the stored text, stop and reconsider: the etag, and every client's view of the collection, is a hash of those exact bytes.
+- **the CardDAV layer must stay off Litestar's HTTP routing.** litestar's `HTTPRouteHandler` only knows the standard methods; `PROPFIND`, `REPORT` and `PROPPATCH` reach us through an `asgi(..., is_mount=True)` mount, which is method-agnostic. inside the mount, read `scope["raw_path"]` and not `scope["path"]` — litestar rewrites the latter to the post-mount remainder and appends a trailing slash.
+- **`change_seq` is the backbone of sync.** every write bumps it; it backs both the ctag and the RFC 6578 sync token. deletions leave permanent tombstones so an old sync token is still answerable. do not prune them without replacing the "token too old" path with a `valid-sync-token` rejection.
+- the protocol layer (`src/server/dav/`) is deliberately synchronous and pure: `DavRequest` in, `DavResponse` out. the ASGI adapter runs it on a worker thread. keep it that way — it is what makes the CardDAV tests readable.
+
+## deploying & debugging on openhost
+
+- openhost is a cloud platform for self-hosting apps. there's context on openhost at `~/openhost`; read `docs/src/creating_an_app.md` there for how apps are built and run.
+- instances are managed via the `oh` cli. `oh instance list` shows the configured instances and the URL each is available at. the user will tell you which instance to use; do not touch the others. most commands take `--instance <name>`.
+- these instances have web servers facing the public internet. be careful with anything that could open unsecured public access — eg adding `public_paths` in `openhost.toml`.
+- prefer `oh` commands for debugging since they handle auth: `oh instance ssh` and `oh curl`. `oh instance token --instance <name>` gives a raw API token (Bearer auth) only if absolutely necessary — better not to see it, and never put it anywhere that might get committed.
+- typical deploy loop: commit + push, then `oh app reload <app> --update --wait --instance <name>` to pull the changes and reload, then `oh app logs <app> --instance <name>` to check the logs.
+- to test pages in a browser as the user would see them, use playwright and inject the API token as a Bearer header — this matches a request made with the owner's login cookies.
+- if you run into any cases where the app test harness doesn't match the expected/real behavior of openhost, stop and mention this so that we can fix the test harness - don't just make some workaround to the issue.
+- if you run into cases where openhost itself doesn't behave as expected, also stop and mention this so we can open a PR there to fix upstream.

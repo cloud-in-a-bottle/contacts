@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="stack">
+  <h1>CardDAV access</h1>
+  {% if regenerated %}<p class="notice">New password generated. Existing clients will stop syncing until you update them.</p>{% endif %}
+
+  <section class="card">
+    <dl class="fields">
+      <dt>Server URL</dt>
+      <dd><span class="mono">{{ base_url }}</span><div class="muted">Enter this in clients that autodiscover (iOS, macOS, DAVx5, Thunderbird).</div></dd>
+      <dt>Collection URL</dt>
+      <dd><span class="mono">{{ collection_url }}</span><div class="muted">Use this if a client asks for the address book path directly.</div></dd>
+      <dt>Username</dt>
+      <dd><span class="mono">{{ owner_username }}</span><div class="muted">Any username is accepted — only the password is checked.</div></dd>
+      <dt>Password</dt>
+      <dd>
+        <span class="secret">{{ password }}</span>
+        <div class="muted">Generated on first boot. It is the only thing protecting this endpoint from the internet.</div>
+      </dd>
+      <dt>Created</dt>
+      <dd class="muted">{{ password_created_at }}</dd>
+      <dt>Contacts stored</dt>
+      <dd>{{ contact_count }}</dd>
+    </dl>
+  </section>
+
+  <form method="post" action="/settings/regenerate-password"
+        onsubmit="return confirm('Generate a new CardDAV password? Every synced client will need updating.');">
+    <button class="danger" type="submit">Generate a new password</button>
+  </form>
+
+  <section class="card">
+    <div class="field-group">
+      <h2>Adding a client</h2>
+      <ol class="muted" style="margin: 0; padding-left: 20px; display: grid; gap: 6px;">
+        <li><strong>iOS / macOS:</strong> Settings → Contacts → Accounts → Add Account → Other → Add CardDAV Account. Server <span class="mono">{{ host }}</span>, any username, the password above.</li>
+        <li><strong>DAVx5 (Android):</strong> Add account → Login with URL and password, using the server URL above.</li>
+        <li><strong>Thunderbird:</strong> Address Book → New → CardDAV Address Book, using the server URL above.</li>
+      </ol>
+    </div>
+  </section>
+</div>
+{% endblock %}

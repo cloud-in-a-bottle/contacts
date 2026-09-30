@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Contacts{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="row" style="justify-content: space-between;">
+    <h1>{% if search %}Results for “{{ search }}”{% else %}All contacts{% endif %}</h1>
+    <span class="muted">{{ contacts|length }} of {{ total }}</span>
+  </div>
+  <div class="card">
+    {% if contacts %}
+    <ul class="contact-list">
+      {% for entry in contacts %}
+      <li>
+        <a href="/contacts/{{ entry.resource_name|urlencode }}">
+          {% if entry.has_photo %}
+            <img class="avatar" src="/contacts/{{ entry.resource_name|urlencode }}/photo" alt="">
+          {% else %}
+            <span class="avatar" aria-hidden="true">{{ entry.initials }}</span>
+          {% endif %}
+          <span class="who">
+            <span class="name">{{ entry.display_name }}</span>
+            {% if entry.subtitle %}<span class="sub">{{ entry.subtitle }}</span>{% endif %}
+          </span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">
+      {% if search %}Nothing matches that search.{% else %}No contacts yet. <a href="/contacts/new">Add the first one</a>, or sync from a CardDAV client.{% endif %}
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
