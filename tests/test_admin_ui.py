@@ -214,4 +214,4 @@ def test_regenerating_the_password_invalidates_the_old_one(
     assert dav_client.request("PROPFIND", BOOK, headers={"Depth": "0"}).status_code == 401
     body = owner_client.get("/settings?regenerated=true").text
     assert carddav_password not in body
-    assert re.search(r"class=\"secret\">([a-z2-9]{5}-){3}[a-z2-9]{5}<", body)
+    assert re.search(r"class=\"secret\">([a-z]{3,5}-){4}[a-z]{3,5}<", body)

@@ -1,23 +1,55 @@
 import hmac
+import math
 import secrets
 from datetime import UTC
 from datetime import datetime
+from pathlib import Path
 
 from server.db import Database
 from server.models import Secret
 
 CARDDAV_PASSWORD_NAME = "carddav_password"
 
-# Unambiguous when read off a screen and retyped into a phone: no i/l/1, no o/0.
-_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
-_GROUP_LENGTH = 5
-_GROUP_COUNT = 4
+WORDLIST_PATH = Path(__file__).parent / "wordlist.txt"
+WORD_COUNT = 5
+SEPARATOR = "-"
+
+_MINIMUM_WORDLIST_SIZE = 1000
+
+
+def _load_words() -> tuple[str, ...]:
+    words = tuple(
+        stripped
+        for line in WORDLIST_PATH.read_text(encoding="utf-8").splitlines()
+        if (stripped := line.strip()) and not stripped.startswith("#")
+    )
+    if len(words) < _MINIMUM_WORDLIST_SIZE:
+        raise RuntimeError(
+            f"{WORDLIST_PATH} holds only {len(words)} words; a password drawn from so few would be guessable"
+        )
+    return words
+
+
+WORDS = _load_words()
+
+
+def password_entropy_bits() -> float:
+    """How much guesswork a password represents, given words are drawn without replacement."""
+    permutations = math.prod(len(WORDS) - offset for offset in range(WORD_COUNT))
+    return math.log2(permutations)
 
 
 def generate_password() -> str:
-    """A ~99-bit password, grouped so it can be copied onto a phone without mistakes."""
-    groups = ["".join(secrets.choice(_ALPHABET) for _ in range(_GROUP_LENGTH)) for _ in range(_GROUP_COUNT)]
-    return "-".join(groups)
+    """Five random words, hyphenated — ``cider-shrug-mango-vowel-tusk``.
+
+    Words rather than characters because this is read off the settings page and typed by hand into a phone's
+    account settings, where a string of random letters invites mistakes.
+
+    Drawn without replacement: repeating a word would cost no meaningful entropy (the list is long enough that
+    the two differ in the third decimal place of a bit) but a password like ``cat-cat-shoe-dog-fox`` reads as a
+    bug.  ``SystemRandom`` is seeded from the OS, so the sampling is still cryptographically sound.
+    """
+    return SEPARATOR.join(secrets.SystemRandom().sample(WORDS, k=WORD_COUNT))
 
 
 class CredentialStore:
