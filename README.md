@@ -126,13 +126,21 @@ serialise instead of racing on git's index.
 
 ### What git cannot do
 
-Sort and search. Those need every card parsed, so the derived fields — display name, sort key, search text —
-are cached in memory against the current commit and rebuilt whenever HEAD moves. The cache cannot go stale,
-because its key *is* the version of the data. The full vCard text is not cached: `list_contacts()` reads the
-files, which the page cache makes cheap.
+Sort and search. Those need every card parsed, so the derived fields — display name, sort key, search text, and
+everything else the list page shows — are cached in memory against the current commit. The cache cannot go
+stale, because its key *is* the version of the data.
 
-This is fine for a personal address book and would not be for a hundred thousand contacts; the ceiling is the
-cost of parsing every card whenever HEAD moves.
+When HEAD moves the cache is **brought forward from the diff**, not rebuilt: a write re-reads the one card that
+changed. Rebuilding wholesale would make a bulk CardDAV sync quadratic, since every `PUT` moves HEAD and the
+next request would re-parse the entire address book. A full scan happens only on the first request after a
+restart.
+
+The list page is answered from that cache alone — no files read, no cards parsed — which is enforced by a test
+that makes reading a file raise. Card text is deliberately not cached; `list_contacts()`, which the export and
+CardDAV paths use, reads the files.
+
+The ceiling is the cold scan on startup: around 120 ms for 410 contacts carrying 5 MB of inline photos. Fine
+for a personal address book, not for a hundred thousand contacts.
 
 ### SQLite
 

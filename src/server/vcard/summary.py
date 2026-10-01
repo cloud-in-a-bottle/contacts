@@ -1,9 +1,11 @@
 import attr
 
 from server.vcard.model import ContactFields
+from server.vcard.model import StructuredName
 from server.vcard.parse import build_search_text
 from server.vcard.parse import extract_fields
 from server.vcard.parse import extract_uid
+from server.vcard.parse import has_inline_photo
 from server.vcard.parse import parse_vcard
 
 
@@ -20,6 +22,9 @@ class VCardSummary:
     display_name: str
     sort_key: str
     search_text: str
+    subtitle: str
+    initials: str
+    has_photo: bool
     fields: ContactFields
 
 
@@ -32,8 +37,39 @@ def summarize(text: str, fallback_uid: str) -> VCardSummary:
         display_name=display_name,
         sort_key=_sort_key(fields, display_name),
         search_text=build_search_text(card, fields),
+        subtitle=_subtitle(fields),
+        initials=initials_for(display_name, fields.name),
+        has_photo=has_inline_photo(card),
         fields=fields,
     )
+
+
+def _subtitle(fields: ContactFields) -> str:
+    """The second line of a contact in the list: whatever identifies them after their name."""
+    for candidate in (
+        fields.organization,
+        fields.emails[0].value if fields.emails else "",
+        fields.phones[0].value if fields.phones else "",
+    ):
+        if candidate:
+            return candidate
+    return ""
+
+
+def initials_for(display_name: str, name: StructuredName | None = None) -> str:
+    """Two letters for the avatar.
+
+    The structured name is used when there is one, because the display name often leads with an honorific and
+    "Dr. Amara Okonkwo" should read AO, not DO.
+    """
+    if name is not None and (name.given or name.family):
+        return ((name.given[:1] or name.family[:1]) + (name.family[:1] if name.given else "")).upper()
+    words = [word for word in display_name.split() if word[:1].isalnum()]
+    if not words:
+        return "?"
+    if len(words) == 1:
+        return words[0][:2].upper()
+    return (words[0][:1] + words[-1][:1]).upper()
 
 
 def _sort_key(fields: ContactFields, display_name: str) -> str:

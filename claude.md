@@ -18,6 +18,9 @@ a single-owner contacts app: sqlite storage, a server-rendered admin UI, and a C
 - **every write takes the repository flock** (`Repository.locked`). git's index is a single shared file; concurrent CardDAV and web writes would corrupt it otherwise. reads do not take the lock.
 - **a resource name becomes a filename**, so `server/naming.py` is a security boundary, not a formatting helper — it is what keeps `..`, `.git` and path separators out of the tree. do not loosen it without thinking about what a CardDAV client could then PUT.
 - **the contact index is cached against HEAD.** it holds derived fields only, never the card text. the cache cannot go stale because its key is the version of the data; if you add a field to `IndexEntry`, it is rebuilt on the next commit automatically.
+- **the list page must stay parse-free.** everything it renders comes from `IndexEntry`; `tests/test_listing_cost.py` makes `Repository.read_file` raise and asserts the page still works. if you need something new on that page, add it to the index rather than parsing in the handler — doing the latter is what made a 410-contact dashboard take 1.7 seconds.
+- **when HEAD moves the index advances off the diff**, it is not rebuilt (`_advance_index`). a full rebuild per write would make a bulk carddav sync quadratic.
+- **watch for accidental quadratic string building when touching the vcard parser.** an inline PHOTO is one value folded over thousands of lines; `unfold` collects chunks in a list and joins once for exactly that reason, and there is a test that unfolds 40k folded lines under a time bound to catch a regression.
 - the protocol layer (`src/server/dav/`) is deliberately synchronous and pure: `DavRequest` in, `DavResponse` out. the ASGI adapter runs it on a worker thread. keep it that way — it is what makes the CardDAV tests readable.
 
 ## running the harness in the claude-workbench container

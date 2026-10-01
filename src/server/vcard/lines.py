@@ -63,21 +63,60 @@ def _is_quoted_printable(header: str) -> bool:
     return "QUOTED-PRINTABLE" in header.upper()
 
 
+# A folded header longer than this is not a real vCard, and continuing to re-scan for the name/value colon
+# would make unfolding quadratic again.  Past it, assume the header is settled and not quoted-printable.
+_MAX_FOLDED_HEADER = 1024
+
+
 def unfold(text: str) -> list[str]:
     """Join continuation lines into whole content lines.
 
     Handles both wrapping styles found in the wild: RFC 6350 folding (a continuation starts with a space or tab) and
     the vCard 2.1 quoted-printable soft line break (the line ends with ``=``).
+
+    Chunks are collected in a list and joined once per logical line.  Appending to a string instead makes this
+    quadratic, which matters more than it sounds: an inline PHOTO is a single value folded over thousands of
+    lines, and re-copying the accumulated value for each of them dominated the cost of reading an address book.
     """
     lines: list[str] = []
+    chunks: list[str] = []
+    header: str | None = None
+    is_quoted_printable = False
+
+    def flush() -> None:
+        if chunks:
+            joined = "".join(chunks)
+            if joined.strip():
+                lines.append(joined)
+            chunks.clear()
+
     for raw_line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        if lines and raw_line[:1] in (" ", "\t"):
-            lines[-1] += raw_line[1:]
-        elif lines and lines[-1].endswith("=") and _is_quoted_printable(lines[-1].split(":", 1)[0]):
-            lines[-1] = lines[-1][:-1] + raw_line
+        if chunks and raw_line[:1] in (" ", "\t"):
+            chunks.append(raw_line[1:])
+        elif chunks and is_quoted_printable and chunks[-1].endswith("="):
+            chunks[-1] = chunks[-1][:-1]
+            chunks.append(raw_line)
         else:
-            lines.append(raw_line)
-    return [line for line in lines if line.strip()]
+            flush()
+            chunks.append(raw_line)
+            name, separator, _ = raw_line.partition(":")
+            header = name if separator else None
+            is_quoted_printable = bool(separator) and _is_quoted_printable(name)
+            continue
+
+        if header is None:
+            # The colon had not arrived yet when this line started, so the header is itself folded.  Keep
+            # looking for it, but only while the accumulated text is short enough for that to be cheap.
+            joined = "".join(chunks)
+            name, separator, _ = joined.partition(":")
+            if separator:
+                header = name
+                is_quoted_printable = _is_quoted_printable(name)
+            elif len(joined) > _MAX_FOLDED_HEADER:
+                header = ""
+
+    flush()
+    return lines
 
 
 def parse_line(line: str) -> ContentLine | None:

@@ -211,3 +211,18 @@ def build_search_text(card: VCard, fields: ContactFields) -> str:
     # Digits-only forms of phone numbers so that searching "5551234" finds "+1 (555) 123-4".
     parts.extend(re.sub(r"\D", "", typed.value) for typed in fields.phones)
     return " ".join(part.lower() for part in parts if part).strip()
+
+
+def has_inline_photo(card: VCard) -> bool:
+    """Whether this card carries a photo we could serve, without paying to decode it.
+
+    The list page needs this for every contact, and an inline PHOTO is the largest thing in a vCard — base64
+    decoding each one just to answer yes or no is what made listing an address book slow.  This checks the
+    shape instead; a PHOTO whose base64 turns out to be corrupt will 404 when actually fetched.
+    """
+    photo_line = card.first("PHOTO")
+    if photo_line is None:
+        return False
+    if any(value.upper() in ("B", "BASE64") for value in photo_line.param("ENCODING")):
+        return True
+    return bool(_DATA_URI.match(decode_value(photo_line).strip().replace("\\,", ",")))
