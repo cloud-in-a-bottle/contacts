@@ -1,6 +1,8 @@
+import base64
 import re
 from pathlib import Path
 
+import pytest
 from dav_helpers import vcard
 from litestar import Litestar
 from litestar.testing import TestClient
@@ -180,6 +182,66 @@ def test_an_embedded_photo_is_served(owner_client: TestClient[Litestar], store: 
     assert response.headers["Content-Type"].startswith("image/png")
     assert response.content.startswith(b"\x89PNG")
     assert '<img class="avatar" src="/contacts/mira/photo"' in owner_client.get("/").text
+
+
+@pytest.mark.parametrize("path", ["/schema", "/schema/openapi.json", "/schema/swagger"])
+def test_no_generated_api_docs_are_served(path: str, anonymous_client: TestClient[Litestar]) -> None:
+    assert anonymous_client.get(path).status_code in (401, 404)
+
+
+def test_a_photo_route_forbids_sniffing_and_sandboxes(owner_client: TestClient[Litestar], store: ContactStore) -> None:
+    pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    store.put(
+        "mira", f"BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Mira\r\nPHOTO;ENCODING=b;TYPE=PNG:{pixel}\r\nEND:VCARD\r\n", "t"
+    )
+    response = owner_client.get("/contacts/mira/photo")
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Content-Security-Policy"] == "sandbox"
+
+
+@pytest.mark.parametrize(
+    "photo",
+    [
+        "PHOTO;ENCODING=b;TYPE=text/html:{payload}",
+        "PHOTO;ENCODING=b;TYPE=image/svg+xml:{payload}",
+        "PHOTO:data:text/html;base64,{payload}",
+        "PHOTO:data:image/svg+xml;base64,{payload}",
+    ],
+)
+def test_a_photo_that_a_browser_would_run_is_not_served(
+    photo: str, dav_client: TestClient[Litestar], owner_client: TestClient[Litestar]
+) -> None:
+    """A CardDAV client picks the photo's media type; served as a document on this origin it would be script."""
+    payload = base64.b64encode(b"<script>alert(document.domain)</script>").decode()
+    card = f"BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Evil\r\n{photo.format(payload=payload)}\r\nEND:VCARD\r\n"
+    assert dav_client.put(f"{BOOK}evil.vcf", content=card).status_code == 201
+    assert owner_client.get("/contacts/evil/photo").status_code == 404
+
+
+def test_only_web_urls_become_links(dav_client: TestClient[Litestar], owner_client: TestClient[Litestar]) -> None:
+    card = (
+        "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Evil\r\n"
+        "URL:javascript:alert(document.domain)\r\nURL: JavaScript:alert(1)\r\nURL:https://example.test/\r\n"
+        "END:VCARD\r\n"
+    )
+    assert dav_client.put(f"{BOOK}evil.vcf", content=card).status_code == 201
+    body = owner_client.get("/contacts/evil").text
+    assert 'href="javascript' not in body.lower()
+    assert 'href=" javascript' not in body.lower()
+    assert "<dd>javascript:alert(document.domain)</dd>" in body
+    assert '<a href="https://example.test/"' in body
+
+
+def test_a_download_name_from_a_client_cannot_break_its_header(
+    dav_client: TestClient[Litestar], owner_client: TestClient[Litestar]
+) -> None:
+    assert dav_client.put(f"{BOOK}a%22b%20%C3%A9.vcf", content=vcard("uid-1", "Mira Vance")).status_code == 201
+    response = owner_client.get("/contacts/a%22b%20%C3%A9/vcard")
+    assert response.headers["Content-Disposition"] == (
+        "attachment; filename=\"a_b _.vcf\"; filename*=UTF-8''a%22b%20%C3%A9.vcf"
+    )
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Content-Security-Policy"] == "sandbox"
 
 
 def test_a_contact_without_a_photo_has_no_photo_route(owner_client: TestClient[Litestar], store: ContactStore) -> None:

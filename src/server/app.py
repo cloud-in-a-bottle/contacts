@@ -76,4 +76,7 @@ def create_app(config: Config | None = None) -> Litestar:
             "owner_username": Provide(provide_owner_username, sync_to_thread=False),
         },
         template_config=TemplateConfig(directory=TEMPLATE_DIRECTORY, engine=JinjaTemplateEngine),
+        # Litestar would otherwise serve its generated API docs under /schema, outside the owner guard.  Nothing
+        # here is an API for anyone else to call, so there is no reason to describe it to them.
+        openapi_config=None,
     )

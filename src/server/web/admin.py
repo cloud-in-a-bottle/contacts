@@ -1,5 +1,6 @@
 from typing import Annotated
 from typing import Any
+from urllib.parse import quote
 
 from anyio.to_thread import run_sync
 from litestar import Request
@@ -41,6 +42,23 @@ from server.vcard.summary import summarize
 from server.web.formatting import humanize_timestamp
 from server.web.forms import contact_fields_from_form
 from server.web.urls import external_origin
+
+# For responses whose bytes came from a vCard, which a CardDAV client may have written.  They are served on the admin
+# UI's origin, so if a browser ever treated one as a document it would run as the owner: forbid sniffing, and sandbox
+# it — no script, opaque origin — if it is opened directly.
+_STORED_CONTENT_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "sandbox",
+}
+
+
+def _attachment(filename: str) -> str:
+    """A Content-Disposition naming ``filename``, which may hold quotes or non-ASCII from a client-chosen name."""
+    fallback = "".join(
+        character if character.isascii() and character.isprintable() and character not in '"\\' else "_"
+        for character in filename
+    )
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename, safe='')}"
 
 
 async def _require_contact(store: ContactStore, resource_name: str) -> Contact:
@@ -179,7 +197,7 @@ async def contact_version(
     text = await run_sync(store.version, resource_name, commit)
     if text is None:
         raise NotFoundException(detail="no such version of this contact")
-    return Response(content=text.encode("utf-8"), media_type=EXPORT_CONTENT_TYPE)
+    return Response(content=text.encode("utf-8"), media_type=EXPORT_CONTENT_TYPE, headers=_STORED_CONTENT_HEADERS)
 
 
 @post("/contacts/{resource_name:str}/restore", name="contact_restore")
@@ -204,7 +222,7 @@ async def contact_vcard(store: NamedDependency[ContactStore], resource_name: Fro
     return Response(
         content=contact.vcard.encode("utf-8"),
         media_type=EXPORT_CONTENT_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="{resource_name}.vcf"'},
+        headers={**_STORED_CONTENT_HEADERS, "Content-Disposition": _attachment(f"{resource_name}.vcf")},
     )
 
 
@@ -217,7 +235,7 @@ async def contact_photo(store: NamedDependency[ContactStore], resource_name: Fro
     return Response(
         content=photo.data,
         media_type=photo.media_type,
-        headers={"Cache-Control": "private, max-age=300", "ETag": contact.etag},
+        headers={**_STORED_CONTENT_HEADERS, "Cache-Control": "private, max-age=300", "ETag": contact.etag},
     )
 
 

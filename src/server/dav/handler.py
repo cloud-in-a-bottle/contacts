@@ -75,7 +75,13 @@ class DavHandler:
         self._credentials = credentials
         self._owner_username = owner_username
 
-    def handle(self, request: DavRequest) -> DavResponse:
+    def gate(self, request: DavRequest) -> DavResponse | None:
+        """The answer to give before the body is even read, or None if the request may proceed.
+
+        This looks only at the method, path and headers, so the ASGI adapter can call it first and never buffer a
+        body for someone who has not presented the password.  Everything an unauthenticated client can reach is
+        decided here.
+        """
         if request.path.startswith(WELL_KNOWN_PATH):
             # RFC 6764 bootstrapping: point the client at the context path and let it discover the rest.  No
             # authentication, because this reveals nothing beyond the URL layout.
@@ -88,6 +94,11 @@ class DavHandler:
                 content_type="text/plain; charset=utf-8",
                 headers=(("WWW-Authenticate", AUTH_REALM),),
             )
+        return None
+
+    def handle(self, request: DavRequest) -> DavResponse:
+        if (refusal := self.gate(request)) is not None:
+            return refusal
 
         resource = resolve(request.path)
         if resource is None:

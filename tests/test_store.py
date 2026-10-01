@@ -190,7 +190,9 @@ def test_a_version_that_does_not_exist_is_reported_as_missing(store: ContactStor
     assert store.version("nobody", store.token()) is None
 
 
-@pytest.mark.parametrize("name", ["..", ".", ".git", ".hidden", "a/b", "a\\b", "", "x" * 201])
+@pytest.mark.parametrize(
+    "name", ["..", ".", ".git", ".hidden", "a/b", "a\\b", "", "x" * 201, "\U0001f600" * 150, "a\ud800b"]
+)
 def test_names_that_would_escape_the_repository_are_refused(name: str, store: ContactStore) -> None:
     assert is_safe_resource_name(name) is False
     assert store.get(name) is None

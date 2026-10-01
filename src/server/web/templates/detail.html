@@ -33,7 +33,12 @@
       {% endfor %}
       {% for url in fields.urls %}
         <dt>Website{% if url.label %} <span class="tag">{{ url.label }}</span>{% endif %}</dt>
-        <dd><a href="{{ url.value }}" rel="noopener noreferrer nofollow">{{ url.value }}</a></dd>
+        {# A URL can arrive from a CardDAV client, so only web schemes become links: javascript: would run as the owner. #}
+        {% if url.value.lower().startswith(("http://", "https://")) %}
+          <dd><a href="{{ url.value }}" rel="noopener noreferrer nofollow">{{ url.value }}</a></dd>
+        {% else %}
+          <dd>{{ url.value }}</dd>
+        {% endif %}
       {% endfor %}
       {% if fields.nickname %}<dt>Nickname</dt><dd>{{ fields.nickname }}</dd>{% endif %}
       {% if fields.department %}<dt>Department</dt><dd>{{ fields.department }}</dd>{% endif %}
