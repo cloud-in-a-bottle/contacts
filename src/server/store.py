@@ -1,5 +1,6 @@
 import re
 import threading
+from collections.abc import Iterable
 from collections.abc import Sequence
 from datetime import UTC
 from datetime import datetime
@@ -21,7 +22,7 @@ from server.vcard.summary import summarize
 
 @attr.s(auto_attribs=True, frozen=True)
 class IndexEntry:
-    """The derived facts about one contact — everything needed to list, sort and search without re-parsing."""
+    """The derived facts about one contact — everything the list page shows, so it never re-parses a card."""
 
     resource_name: str
     uid: str
@@ -29,6 +30,9 @@ class IndexEntry:
     display_name: str
     sort_key: str
     search_text: str
+    subtitle: str
+    initials: str
+    has_photo: bool
     updated_at: str
 
 
@@ -46,7 +50,8 @@ class ContactStore:
     tombstone table to keep forever.
 
     Parsing every card to sort and search it is the one thing git cannot do, so the derived fields are cached
-    against the current commit and rebuilt whenever HEAD moves.
+    against the current commit.  When HEAD moves the cache is brought forward from the diff rather than rebuilt,
+    so a single write costs one card's worth of parsing and not the whole address book's.
     """
 
     def __init__(self, repository: Repository) -> None:
@@ -71,33 +76,56 @@ class ContactStore:
             cached = self._index
             if cached is not None and cached.token == token:
                 return cached
-            index = self._build_index(token)
+            if cached is not None and self._repository.is_known_commit(cached.token):
+                index = self._advance_index(cached, token)
+            else:
+                index = self._build_index(token)
             self._index = index
             return index
 
-    def _build_index(self, token: str) -> Index:
-        entries: list[IndexEntry] = []
-        for filename, stat in self._repository.list_files():
-            resource_name = resource_name_from_filename(filename)
+    def _advance_index(self, cached: Index, token: str) -> Index:
+        """Bring a cached index forward to ``token`` by re-reading only what the diff says changed."""
+        entries = {entry.resource_name: entry for entry in cached.entries}
+        for change in self._repository.changes_since(cached.token):
+            resource_name = resource_name_from_filename(change.path)
             if resource_name is None:
                 continue
-            text = self._repository.read_file(filename)
-            if text is None:
+            entries.pop(resource_name, None)
+            if change.is_deleted:
                 continue
-            summary = summarize(text, fallback_uid=resource_name)
-            entries.append(
-                IndexEntry(
-                    resource_name=resource_name,
-                    uid=summary.uid,
-                    etag=content_etag(text),
-                    display_name=summary.display_name,
-                    sort_key=summary.sort_key,
-                    search_text=summary.search_text,
-                    updated_at=datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(timespec="seconds"),
-                )
-            )
-        entries.sort(key=lambda entry: (entry.sort_key, entry.resource_name))
-        return Index(token=token, entries=tuple(entries))
+            entry = self._read_entry(resource_name)
+            if entry is not None:
+                entries[resource_name] = entry
+        return Index(token=token, entries=_sorted(entries.values()))
+
+    def _build_index(self, token: str) -> Index:
+        entries = [
+            entry
+            for filename, _ in self._repository.list_files()
+            if (resource_name := resource_name_from_filename(filename)) is not None
+            and (entry := self._read_entry(resource_name)) is not None
+        ]
+        return Index(token=token, entries=_sorted(entries))
+
+    def _read_entry(self, resource_name: str) -> IndexEntry | None:
+        filename = filename_for(resource_name)
+        text = self._repository.read_file(filename)
+        if text is None:
+            return None
+        summary = summarize(text, fallback_uid=resource_name)
+        modified = (self._repository.path / filename).stat().st_mtime
+        return IndexEntry(
+            resource_name=resource_name,
+            uid=summary.uid,
+            etag=content_etag(text),
+            display_name=summary.display_name,
+            sort_key=summary.sort_key,
+            search_text=summary.search_text,
+            subtitle=summary.subtitle,
+            initials=summary.initials,
+            has_photo=summary.has_photo,
+            updated_at=datetime.fromtimestamp(modified, UTC).isoformat(timespec="seconds"),
+        )
 
     def _contact_from(self, entry: IndexEntry) -> Contact | None:
         text = self._repository.read_file(filename_for(entry.resource_name))
@@ -115,12 +143,19 @@ class ContactStore:
     def count(self) -> int:
         return len(self._current_index().entries)
 
-    def list_contacts(self, search: str = "") -> tuple[Contact, ...]:
+    def list_summaries(self, search: str = "") -> tuple[IndexEntry, ...]:
+        """Everything the list page needs, straight from the cache — no files read, no cards parsed."""
         needle = search.strip().lower()
         entries = self._current_index().entries
-        if needle:
-            entries = tuple(entry for entry in entries if needle in entry.search_text)
-        return tuple(contact for entry in entries if (contact := self._contact_from(entry)) is not None)
+        if not needle:
+            return entries
+        return tuple(entry for entry in entries if needle in entry.search_text)
+
+    def list_contacts(self, search: str = "") -> tuple[Contact, ...]:
+        """The same, but with each card's text, for the callers that actually need it."""
+        return tuple(
+            contact for entry in self.list_summaries(search) if (contact := self._contact_from(entry)) is not None
+        )
 
     def get(self, resource_name: str) -> Contact | None:
         if not is_safe_resource_name(resource_name):
@@ -204,6 +239,10 @@ class ContactStore:
         if not is_safe_resource_name(resource_name) or not self._repository.is_known_commit(commit):
             return None
         return self._repository.show(commit, filename_for(resource_name))
+
+
+def _sorted(entries: Iterable[IndexEntry]) -> tuple[IndexEntry, ...]:
+    return tuple(sorted(entries, key=lambda entry: (entry.sort_key, entry.resource_name)))
 
 
 def content_etag(text: str) -> str:

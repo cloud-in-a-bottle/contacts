@@ -41,8 +41,6 @@ from server.vcard.summary import summarize
 from server.web.formatting import humanize_timestamp
 from server.web.forms import contact_fields_from_form
 from server.web.urls import external_origin
-from server.web.view_models import initials_for
-from server.web.view_models import list_entry
 
 
 async def _require_contact(store: ContactStore, resource_name: str) -> Contact:
@@ -53,15 +51,9 @@ async def _require_contact(store: ContactStore, resource_name: str) -> Contact:
 
 
 @get("/", name="contact_list")
-async def contact_list(
-    request: Request[Any, Any, Any], store: NamedDependency[ContactStore], q: FromQuery[str] = ""
-) -> Template:
-    contacts = await run_sync(store.list_contacts, q)
+async def contact_list(store: NamedDependency[ContactStore], q: FromQuery[str] = "") -> Template:
+    entries = await run_sync(store.list_summaries, q)
     total = await run_sync(store.count)
-    entries = []
-    for contact in contacts:
-        card = parse_vcard(contact.vcard)
-        entries.append(list_entry(contact, extract_fields(card), has_photo=extract_photo(card) is not None))
     return Template(template_name="list.html", context={"contacts": entries, "total": total, "search": q})
 
 
@@ -105,16 +97,15 @@ async def contact_create(request: Request[Any, Any, Any], store: NamedDependency
 @get("/contacts/{resource_name:str}", name="contact_detail")
 async def contact_detail(store: NamedDependency[ContactStore], resource_name: FromPath[str]) -> Template:
     contact = await _require_contact(store, resource_name)
-    card = parse_vcard(contact.vcard)
-    fields = extract_fields(card)
+    summary = summarize(contact.vcard, fallback_uid=resource_name)
     return Template(
         template_name="detail.html",
         context={
             "contact": contact,
-            "fields": fields,
+            "fields": summary.fields,
             "updated_at": humanize_timestamp(contact.updated_at),
-            "initials": initials_for(contact.display_name, fields.name),
-            "has_photo": extract_photo(card) is not None,
+            "initials": summary.initials,
+            "has_photo": summary.has_photo,
         },
     )
 
