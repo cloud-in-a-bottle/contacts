@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ contact.display_name }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="detail-head">
+    {% if has_photo %}
+      <img class="avatar" src="/contacts/{{ contact.resource_name|urlencode }}/photo" alt="">
+    {% else %}
+      <span class="avatar" aria-hidden="true">{{ initials }}</span>
+    {% endif %}
+    <div>
+      <h1>{{ contact.display_name }}</h1>
+      <div class="muted">
+        {%- if fields.job_title %}{{ fields.job_title }}{% if fields.organization %} · {% endif %}{% endif -%}
+        {{ fields.organization }}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <dl class="fields">
+      {% for email in fields.emails %}
+        <dt>Email{% if email.label %} <span class="tag">{{ email.label }}</span>{% endif %}</dt>
+        <dd><a href="mailto:{{ email.value }}">{{ email.value }}</a></dd>
+      {% endfor %}
+      {% for phone in fields.phones %}
+        <dt>Phone{% if phone.label %} <span class="tag">{{ phone.label }}</span>{% endif %}</dt>
+        <dd><a href="tel:{{ phone.value }}">{{ phone.value }}</a></dd>
+      {% endfor %}
+      {% for address in fields.addresses %}
+        <dt>Address{% if address.label %} <span class="tag">{{ address.label }}</span>{% endif %}</dt>
+        <dd>{{ address.one_line }}</dd>
+      {% endfor %}
+      {% for url in fields.urls %}
+        <dt>Website{% if url.label %} <span class="tag">{{ url.label }}</span>{% endif %}</dt>
+        <dd><a href="{{ url.value }}" rel="noopener noreferrer nofollow">{{ url.value }}</a></dd>
+      {% endfor %}
+      {% if fields.nickname %}<dt>Nickname</dt><dd>{{ fields.nickname }}</dd>{% endif %}
+      {% if fields.department %}<dt>Department</dt><dd>{{ fields.department }}</dd>{% endif %}
+      {% if fields.birthday %}<dt>Birthday</dt><dd>{{ fields.birthday }}</dd>{% endif %}
+      {% if fields.categories %}<dt>Tags</dt><dd>{{ fields.categories|join(', ') }}</dd>{% endif %}
+      {% if fields.note %}<dt>Note</dt><dd style="white-space: pre-wrap;">{{ fields.note }}</dd>{% endif %}
+      <dt>Updated</dt><dd class="muted">{{ updated_at }}</dd>
+    </dl>
+  </div>
+
+  <div class="actions">
+    <a class="button primary" href="/contacts/{{ contact.resource_name|urlencode }}/edit">Edit</a>
+    <a class="button" href="/contacts/{{ contact.resource_name|urlencode }}/history">History</a>
+    <a class="button" href="/contacts/{{ contact.resource_name|urlencode }}/vcard">Download .vcf</a>
+    <form method="post" action="/contacts/{{ contact.resource_name|urlencode }}/delete"
+          onsubmit="return confirm('Delete {{ contact.display_name }}? This also removes it from synced clients.');">
+      <button class="danger" type="submit">Delete</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

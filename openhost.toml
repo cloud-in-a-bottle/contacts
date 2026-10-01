@@ -1,0 +1,31 @@
+[app]
+name = "contacts"
+version = "0.1.0"
+description = "A single-owner contacts app with a web UI and a CardDAV endpoint"
+
+[runtime.container]
+image = "Dockerfile"
+port = 8080
+
+[routing]
+health_check = "/health"
+# The admin UI is left behind OpenHost owner auth.  Only the CardDAV endpoint is public, because external CardDAV
+# clients (iOS, DAVx5, Thunderbird) cannot present an owner session cookie — they authenticate to this app with
+# HTTP Basic against a password generated on first boot and shown on the settings page.
+# "/.well-known/carddav" serves nothing but a 301 to "/dav/", which clients follow before authenticating.
+public_paths = ["/dav", "/.well-known/carddav"]
+
+[[links]]
+name = "settings"
+path = "/settings"
+
+[resources]
+memory_mb = 256
+# apt, a CPython download and `uv sync` all happen in the build, which needs more headroom than the app does.
+build_memory_mb = 2048
+cpu_cores = 0.25
+
+[data]
+# The address book is a git repository under app_data; sqlite holds only the CardDAV password.
+app_data = true
+sqlite = ["main"]

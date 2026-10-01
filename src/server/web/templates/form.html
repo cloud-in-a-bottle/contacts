@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+<form class="stack" method="post" action="{{ action }}">
+  <h1>{{ heading }}</h1>
+  {% if error %}<p class="notice">{{ error }}</p>{% endif %}
+
+  <section class="card">
+    <div class="field-group">
+      <h2>Name</h2>
+      <label>Display name
+        <input type="text" name="formatted_name" value="{{ fields.formatted_name }}" placeholder="How this contact is listed">
+      </label>
+      <div class="grid-2">
+        <label>First<input type="text" name="given" value="{{ fields.name.given }}"></label>
+        <label>Last<input type="text" name="family" value="{{ fields.name.family }}"></label>
+        <label>Middle<input type="text" name="additional" value="{{ fields.name.additional }}"></label>
+        <label>Nickname<input type="text" name="nickname" value="{{ fields.nickname }}"></label>
+        <label>Prefix<input type="text" name="prefix" value="{{ fields.name.prefix }}"></label>
+        <label>Suffix<input type="text" name="suffix" value="{{ fields.name.suffix }}"></label>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="field-group">
+      <h2>Work</h2>
+      <div class="grid-2">
+        <label>Organization<input type="text" name="organization" value="{{ fields.organization }}"></label>
+        <label>Department<input type="text" name="department" value="{{ fields.department }}"></label>
+      </div>
+      <label>Job title<input type="text" name="job_title" value="{{ fields.job_title }}"></label>
+    </div>
+  </section>
+
+  {% macro repeatable(title, prefix, entries, placeholder, label_placeholder) %}
+  <section class="card">
+    <div class="field-group" data-repeat="{{ prefix }}">
+      <h2>{{ title }}</h2>
+      <div class="rows">
+        {% for entry in entries %}
+        <div class="repeat-row">
+          <label>Value<input type="text" name="{{ prefix }}_value" value="{{ entry.value }}" placeholder="{{ placeholder }}"></label>
+          <label>Label<input type="text" name="{{ prefix }}_label" value="{{ entry.label }}" placeholder="{{ label_placeholder }}"></label>
+          <button type="button" class="remove-row">Remove</button>
+        </div>
+        {% endfor %}
+        <div class="repeat-row">
+          <label>Value<input type="text" name="{{ prefix }}_value" value="" placeholder="{{ placeholder }}"></label>
+          <label>Label<input type="text" name="{{ prefix }}_label" value="" placeholder="{{ label_placeholder }}"></label>
+          <button type="button" class="remove-row">Remove</button>
+        </div>
+      </div>
+      <div><button type="button" class="add-row">Add another</button></div>
+    </div>
+  </section>
+  {% endmacro %}
+
+  {{ repeatable("Email", "email", fields.emails, "name@example.com", "home / work") }}
+  {{ repeatable("Phone", "phone", fields.phones, "+1 555 0100", "mobile / work") }}
+  {{ repeatable("Website", "url", fields.urls, "https://example.com", "home / work") }}
+
+  <section class="card">
+    <div class="field-group" data-repeat="address">
+      <h2>Addresses</h2>
+      <div class="rows">
+        {% for address in fields.addresses|list + [empty_address] %}
+        <div class="repeat-row address">
+          <label>Street<input type="text" name="address_street" value="{{ address.street }}"></label>
+          <div class="grid-2">
+            <label>City<input type="text" name="address_city" value="{{ address.city }}"></label>
+            <label>Region<input type="text" name="address_region" value="{{ address.region }}"></label>
+            <label>Postal code<input type="text" name="address_postal_code" value="{{ address.postal_code }}"></label>
+            <label>Country<input type="text" name="address_country" value="{{ address.country }}"></label>
+          </div>
+          <div class="grid-2">
+            <label>Label<input type="text" name="address_label" value="{{ address.label }}" placeholder="home / work"></label>
+            <div style="align-self: end;"><button type="button" class="remove-row">Remove</button></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div><button type="button" class="add-row">Add another</button></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="field-group">
+      <h2>Other</h2>
+      <div class="grid-2">
+        <label>Birthday<input type="text" name="birthday" value="{{ fields.birthday }}" placeholder="1985-04-12"></label>
+        <label>Tags<input type="text" name="categories" value="{{ fields.categories|join(', ') }}" placeholder="family, climbing"></label>
+      </div>
+      <label>Note<textarea name="note">{{ fields.note }}</textarea></label>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="primary" type="submit">Save</button>
+    <a class="button" href="{{ cancel_url }}">Cancel</a>
+  </div>
+</form>
+
+<script>
+// Repeatable rows: clone the last row of a group, or drop one. Everything still posts as plain form fields, so
+// the page works unchanged if this script never runs.
+document.querySelectorAll("[data-repeat]").forEach(function (group) {
+  var rows = group.querySelector(".rows");
+  group.querySelector(".add-row").addEventListener("click", function () {
+    var template = rows.lastElementChild.cloneNode(true);
+    template.querySelectorAll("input").forEach(function (input) { input.value = ""; });
+    rows.appendChild(template);
+  });
+  group.addEventListener("click", function (event) {
+    if (!event.target.classList.contains("remove-row")) return;
+    if (rows.children.length > 1) {
+      event.target.closest(".repeat-row").remove();
+    } else {
+      rows.querySelectorAll("input").forEach(function (input) { input.value = ""; });
+    }
+  });
+});
+</script>
+{% endblock %}
