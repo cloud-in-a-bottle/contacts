@@ -6,10 +6,19 @@ VCARD_SUFFIX = ".vcf"
 # stricter than the DAV spec requires: no separators, no control characters, and no leading dot, which keeps
 # ".git" and friends unreachable however a client spells the request.
 _SAFE_RESOURCE_NAME = re.compile(r"^[^.\x00-\x1f/\\][^\x00-\x1f/\\]{0,199}$")
+# Filesystems cap a name at 255 bytes, not characters, so a name of multi-byte characters can pass the regex and
+# then fail in open() as a 500.  Exactly the filesystem's limit, so no file already on disk stops being a contact.
+_MAX_RESOURCE_NAME_BYTES = 255 - len(VCARD_SUFFIX)
 
 
 def is_safe_resource_name(name: str) -> bool:
-    return bool(_SAFE_RESOURCE_NAME.match(name))
+    if not _SAFE_RESOURCE_NAME.match(name):
+        return False
+    try:
+        return len(name.encode("utf-8")) <= _MAX_RESOURCE_NAME_BYTES
+    except UnicodeEncodeError:
+        # A lone surrogate cannot become a filename at all.
+        return False
 
 
 def filename_for(resource_name: str) -> str:

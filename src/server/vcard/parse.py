@@ -158,6 +158,12 @@ def extract_uid(card: VCard) -> str:
 
 _DATA_URI = re.compile(r"^data:([\w.+/-]+)?(;base64)?,", re.IGNORECASE)
 
+# The photo route serves these bytes on the admin UI's origin with this media type, and the type comes from whoever
+# wrote the card — a CardDAV client included.  Anything a browser would run as a document (text/html,
+# image/svg+xml, ...) would be script on the owner's session, so only raster formats are ever served.
+_SERVABLE_PHOTO_TYPES = frozenset({"image/jpeg", "image/png", "image/gif", "image/webp"})
+_PHOTO_TYPE_ALIASES = {"image/jpg": "image/jpeg"}
+
 
 def extract_photo(card: VCard) -> Photo | None:
     """Decode an inline PHOTO, covering the vCard 3.0 (``ENCODING=B``) and 4.0 (``data:`` URI) spellings.
@@ -189,7 +195,11 @@ def extract_photo(card: VCard) -> Photo | None:
         return None
     if not data:
         return None
-    return Photo(data=data, media_type=media_type or "image/jpeg")
+    media_type = media_type.lower() or "image/jpeg"
+    media_type = _PHOTO_TYPE_ALIASES.get(media_type, media_type)
+    if media_type not in _SERVABLE_PHOTO_TYPES:
+        return None
+    return Photo(data=data, media_type=media_type)
 
 
 def build_search_text(card: VCard, fields: ContactFields) -> str:

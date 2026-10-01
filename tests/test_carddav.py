@@ -1,5 +1,7 @@
 import base64
+from typing import cast
 
+import anyio
 from dav_helpers import CALSERVER
 from dav_helpers import CARDDAV
 from dav_helpers import DAV
@@ -8,6 +10,19 @@ from dav_helpers import propfind_body
 from dav_helpers import vcard
 from litestar import Litestar
 from litestar.testing import TestClient
+from litestar.types import ASGIApp
+from litestar.types import Message
+from litestar.types import Receive
+from litestar.types import ReceiveMessage
+from litestar.types.asgi_types import HTTPRequestEvent
+from litestar.types.asgi_types import HTTPScope
+
+from server.credentials import CredentialStore
+from server.dav.asgi import MAX_REQUEST_BODY
+from server.dav.asgi import make_dav_asgi
+from server.dav.handler import DavHandler
+from server.db import Database
+from server.store import ContactStore
 
 ROOT = "/dav/"
 PRINCIPAL = "/dav/principals/owner/"
@@ -345,3 +360,64 @@ def test_a_resource_name_with_odd_characters_round_trips(dav_client: TestClient[
         dav_client.request("PROPFIND", BOOK, headers={"Depth": "1"}, content=propfind_body((DAV, "getetag"))).content
     )
     assert path in listing.hrefs
+
+
+def test_a_name_too_long_for_the_filesystem_is_refused_rather_than_failing(dav_client: TestClient[Litestar]) -> None:
+    # 150 four-byte characters is within the 200-character limit but over the filesystem's 255 bytes.
+    path = f"{BOOK}{'%F0%9F%98%80' * 150}.vcf"
+    assert dav_client.put(path, content=vcard("uid-1", "Mira Vance")).status_code == 404
+
+
+def test_an_oversized_declared_body_is_refused(dav_client: TestClient[Litestar]) -> None:
+    response = dav_client.put(resource("big"), content=b"x" * (MAX_REQUEST_BODY + 1))
+    assert response.status_code == 413
+    assert dav_client.get(resource("big")).status_code == 404
+
+
+def _status(app: ASGIApp, method: str, headers: list[tuple[bytes, bytes]], receive: Receive) -> int:
+    statuses: list[int] = []
+
+    async def send(message: Message) -> None:
+        if message["type"] == "http.response.start":
+            statuses.append(message["status"])
+
+    scope = cast(
+        HTTPScope,
+        {
+            "type": "http",
+            "method": method,
+            "path": BOOK,
+            "raw_path": BOOK.encode(),
+            "query_string": b"",
+            "headers": headers,
+        },
+    )
+    anyio.run(app, scope, receive, send)
+    return statuses[0]
+
+
+def test_an_unauthenticated_body_is_never_read(store: ContactStore, database: Database) -> None:
+    """The password is checked before the body, so a stranger cannot make the app buffer anything."""
+    app = make_dav_asgi(DavHandler(store, CredentialStore(database), "alice"))
+
+    async def receive() -> ReceiveMessage:
+        raise AssertionError("the body of an unauthenticated request was read")
+
+    assert _status(app, "PUT", [(b"content-length", b"999999999")], receive) == 401
+
+
+def test_an_undeclared_body_is_cut_off_at_the_limit(store: ContactStore, database: Database) -> None:
+    credentials = CredentialStore(database)
+    app = make_dav_asgi(DavHandler(store, credentials, "alice"))
+    authorization = base64.b64encode(f"x:{credentials.carddav_password().value}".encode())
+    chunk = b"x" * (1024 * 1024)
+    reads = 0
+
+    async def receive() -> ReceiveMessage:
+        nonlocal reads
+        reads += 1
+        message: HTTPRequestEvent = {"type": "http.request", "body": chunk, "more_body": True}
+        return message
+
+    assert _status(app, "REPORT", [(b"authorization", b"Basic " + authorization)], receive) == 413
+    assert reads == MAX_REQUEST_BODY // len(chunk) + 1
