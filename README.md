@@ -18,8 +18,15 @@ There are two doors into this app, and they are locked differently.
 CardDAV clients can't log in through Cloud in a Bottle — they hold no session cookie and can't follow an
 interactive login. So the CardDAV paths, and only those, are listed in `public_paths` in `openhost.toml`, which
 means the router hands them to the app without checking anything. **The generated password is the only thing
-standing between those paths and the public internet.** It is 20 characters drawn from a 31-character alphabet
-(~99 bits), and you can replace it from the settings page at any time.
+standing between those paths and the public internet.** It is five words drawn at random from a list of 1295 —
+`cider-shrug-mango-vowel-tusk` — which is about 52 bits of entropy, and you can replace it from the settings
+page at any time.
+
+Words rather than random characters because this password is read off a screen and typed by hand into a
+phone's account settings. 52 bits is far less than a random string of the same length would give, and still
+far more than an online attacker can work through: even at an implausible thousand guesses a second against
+this one container, the expected search takes longer than the species has existed. Each additional word adds
+another ~10 bits (`WORD_COUNT` in `credentials.py`).
 
 `/.well-known/carddav` is public too, but it answers every request with the same `301` to `/dav/` and nothing
 else; clients hit it before they have credentials.

@@ -3,8 +3,12 @@ from pathlib import Path
 
 import pytest
 
+from server.credentials import SEPARATOR
+from server.credentials import WORDS
+from server.credentials import WORD_COUNT
 from server.credentials import CredentialStore
 from server.credentials import generate_password
+from server.credentials import password_entropy_bits
 from server.db import Database
 from server.naming import is_safe_resource_name
 from server.repo import Repository
@@ -212,12 +216,27 @@ def test_the_index_follows_a_write_made_by_another_instance(repository_path: Pat
     assert first.get("mira") is not None
 
 
-def test_generated_passwords_are_distinct_and_typable() -> None:
+def test_generated_passwords_are_five_distinct_words() -> None:
     passwords = {generate_password() for _ in range(200)}
     assert len(passwords) == 200
     for password in passwords:
-        assert len(password) == 23
-        assert set(password) <= set("abcdefghjkmnpqrstuvwxyz23456789-")
+        words = password.split(SEPARATOR)
+        assert len(words) == WORD_COUNT
+        assert set(words) <= set(WORDS)
+        assert len(set(words)) == WORD_COUNT, f"a repeated word reads as a bug: {password}"
+
+
+def test_the_wordlist_cannot_produce_an_ambiguous_password() -> None:
+    """Every word has to be readable back out of the hyphenated password, and unique within the list."""
+    assert len(set(WORDS)) == len(WORDS)
+    for word in WORDS:
+        assert SEPARATOR not in word, f"{word!r} contains the separator, so a password holding it is ambiguous"
+        assert word.isascii() and word.islower() and word.isalpha(), word
+
+
+def test_passwords_stay_well_beyond_online_guessing() -> None:
+    """A floor, so shrinking the word count or the list is a deliberate decision rather than an accident."""
+    assert password_entropy_bits() > 50
 
 
 def test_the_password_is_created_once_and_then_stable(database: Database) -> None:
